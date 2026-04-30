@@ -184,6 +184,15 @@ public/live2d/tororo/tororo.2048/texture_00.png
 public/live2d/tororo/motion/*.motion3.json
 ```
 
+Live2D 资源说明：
+
+- Tororo 白猫来自 Live2D Cubism 官方 Sample Data。
+- This content uses sample data owned and copyrighted by Live2D Inc. The sample data are utilized in accordance with terms and conditions set by Live2D Inc. This content itself is created at the author’s sole discretion.
+- 使用、发布或再分发前请阅读 Live2D 的相关条款：
+  - https://www.live2d.com/en/learn/sample/model-terms/
+  - https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html
+  - https://www.live2d.com/en/sdk/download/web/
+
 Three.js 备用 GLB：
 
 ```text
