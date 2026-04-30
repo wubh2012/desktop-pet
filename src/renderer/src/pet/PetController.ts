@@ -14,9 +14,17 @@
  * whole-object position, rotation, and scale.
  */
 
-export type PetMode = 'idle' | 'walk';
+export type PetMode = 'idle' | 'active';
 
-export type PetOneShotAction = 'jump' | 'spin';
+export type PetOneShotAction =
+  | 'tease'
+  | 'pet'
+  | 'poke'
+  | 'surprise'
+  | 'cute'
+  | 'greet'
+  | 'cheer'
+  | 'attention';
 
 export type PetState = PetMode | PetOneShotAction | 'clicked';
 
@@ -89,7 +97,7 @@ export class PetController {
   /**
    * Sets the persistent mode used outside transient click reactions.
    *
-   * Inputs: `mode` is either `idle` or `walk`.
+   * Inputs: `mode` is either `idle` or `active`.
    * Returns: nothing.
    * Errors: TypeScript constrains valid modes; no runtime exception is thrown.
    * Side effects: updates in-memory mode and the mode restored after clicking.
@@ -120,7 +128,7 @@ export class PetController {
   /**
    * Starts a user-triggered one-shot procedural action.
    *
-   * Inputs: `action` is `jump` or `spin`.
+   * Inputs: `action` is a semantic one-shot interaction id.
    * Returns: nothing.
    * Errors: TypeScript constrains valid actions; no runtime exception is thrown.
    * Side effects: stores the current persistent mode and enters the transient
@@ -151,7 +159,7 @@ export class PetController {
 
     this.elapsedSeconds += delta;
 
-    if (this.mode === 'clicked' || this.mode === 'jump' || this.mode === 'spin') {
+    if (this.mode === 'clicked' || !isPersistentMode(this.mode)) {
       this.clickElapsedSeconds += delta;
 
       if (this.clickElapsedSeconds >= this.getTransientDuration()) {
@@ -160,7 +168,7 @@ export class PetController {
       }
     }
 
-    if (this.mode === 'walk') {
+    if (this.mode === 'active') {
       this.advanceWalk(delta);
     }
 
@@ -212,36 +220,36 @@ export class PetController {
       };
     }
 
-    if (this.mode === 'jump') {
+    if (['tease', 'surprise', 'greet', 'cheer'].includes(this.mode)) {
       const progress = Math.min(this.clickElapsedSeconds / JUMP_DURATION_SECONDS, 1);
       const bounce = Math.sin(progress * Math.PI);
       const scale = 1 + bounce * 0.12;
 
       return {
-        state: 'jump',
+        state: this.mode,
         position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE + bounce * 0.24, 0),
         rotation: vector(0, lookYaw, Math.sin(progress * Math.PI * 2) * 0.04),
         scale: vector(scale, scale, scale)
       };
     }
 
-    if (this.mode === 'spin') {
+    if (['pet', 'poke', 'cute', 'attention'].includes(this.mode)) {
       const progress = Math.min(this.clickElapsedSeconds / SPIN_DURATION_SECONDS, 1);
 
       return {
-        state: 'spin',
+        state: this.mode,
         position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE, 0),
-        rotation: vector(0, progress * Math.PI * 2, 0),
-        scale: vector(1, 1, 1)
+        rotation: vector(0, lookYaw + Math.sin(progress * Math.PI * 2) * 0.24, 0),
+        scale: vector(1, 1 + Math.sin(progress * Math.PI) * 0.08, 1)
       };
     }
 
-    if (this.mode === 'walk') {
+    if (this.mode === 'active') {
       const stride = Math.sin(this.elapsedSeconds * 9);
       const lean = this.walkDirection * 0.16;
 
       return {
-        state: 'walk',
+        state: 'active',
         position: vector(this.xPosition, Math.abs(stride) * WALK_BOB_AMPLITUDE, 0),
         rotation: vector(0, lookYaw + lean, stride * 0.08),
         scale: vector(1, 1, 1)
@@ -267,11 +275,11 @@ export class PetController {
    * Side effects: none.
    */
   private getTransientDuration(): number {
-    if (this.mode === 'jump') {
+    if (['tease', 'surprise', 'greet', 'cheer'].includes(this.mode)) {
       return JUMP_DURATION_SECONDS;
     }
 
-    if (this.mode === 'spin') {
+    if (['pet', 'poke', 'cute', 'attention'].includes(this.mode)) {
       return SPIN_DURATION_SECONDS;
     }
 
@@ -309,12 +317,12 @@ function positiveOrDefault(value: number | undefined, fallback: number): number 
  * Checks whether a state can be stored as the mode restored after a transient.
  *
  * Inputs: current pet state.
- * Returns: true for persistent `idle` and `walk` modes only.
+ * Returns: true for persistent `idle` and `active` modes only.
  * Errors: does not throw.
  * Side effects: none.
  */
 function isPersistentMode(state: PetState): state is PetMode {
-  return state === 'idle' || state === 'walk';
+  return state === 'idle' || state === 'active';
 }
 
 /**

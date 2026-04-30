@@ -13,7 +13,7 @@ import { buildPetActionMenuTemplate } from './petActionMenu.js';
 describe('buildPetActionMenuTemplate', () => {
   test('builds shared pet action items with current state', () => {
     const template = buildPetActionMenuTemplate(
-      { currentActionMode: 'walk', lookAtMouseEnabled: true },
+      { currentActionMode: 'active', lookAtMouseEnabled: true },
       {
         setActionMode: () => undefined,
         triggerOneShotAction: () => undefined,
@@ -22,17 +22,27 @@ describe('buildPetActionMenuTemplate', () => {
     );
 
     expect(template.map((item) => item.label ?? item.type)).toEqual([
-      '待机',
-      '行走',
+      '状态',
+      '安静陪伴',
+      '活泼一点',
       'separator',
-      '跳一下',
-      '转一圈',
+      '互动',
+      '逗它一下',
+      '摸摸它',
+      '轻轻碰它',
+      '小小惊讶',
+      '卖个萌',
       'separator',
-      '看向鼠标'
+      '小剧场',
+      '打个招呼',
+      '精神一下',
+      '求关注',
+      'separator',
+      '看着鼠标'
     ]);
-    expect(template[0]).toMatchObject({ type: 'radio', checked: false });
-    expect(template[1]).toMatchObject({ type: 'radio', checked: true });
-    expect(template[6]).toMatchObject({ type: 'checkbox', checked: true });
+    expect(template[1]).toMatchObject({ type: 'radio', checked: false });
+    expect(template[2]).toMatchObject({ type: 'radio', checked: true });
+    expect(template[16]).toMatchObject({ type: 'checkbox', checked: true });
   });
 
   test('wires menu clicks to the supplied handlers', () => {
@@ -46,11 +56,11 @@ describe('buildPetActionMenuTemplate', () => {
       }
     );
 
-    template[1].click?.(undefined as never, undefined as never, undefined as never);
-    template[3].click?.(undefined as never, undefined as never, undefined as never);
-    template[4].click?.(undefined as never, undefined as never, undefined as never);
-    template[6].click?.(undefined as never, undefined as never, undefined as never);
+    template[2].click?.(undefined as never, undefined as never, undefined as never);
+    template[5].click?.(undefined as never, undefined as never, undefined as never);
+    template[13].click?.(undefined as never, undefined as never, undefined as never);
+    template[16].click?.(undefined as never, undefined as never, undefined as never);
 
-    expect(calls).toEqual(['mode:walk', 'one-shot:jump', 'one-shot:spin', 'look:true']);
+    expect(calls).toEqual(['mode:active', 'one-shot:tease', 'one-shot:cheer', 'look:true']);
   });
 });

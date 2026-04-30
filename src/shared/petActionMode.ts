@@ -11,8 +11,17 @@
  * are sent through Electron IPC.
  */
 
-export const PET_ACTION_MODES = ['idle', 'walk'] as const;
-export const PET_ONE_SHOT_ACTIONS = ['jump', 'spin'] as const;
+export const PET_ACTION_MODES = ['idle', 'active'] as const;
+export const PET_ONE_SHOT_ACTIONS = [
+  'tease',
+  'pet',
+  'poke',
+  'surprise',
+  'cute',
+  'greet',
+  'cheer',
+  'attention'
+] as const;
 
 export type PetActionMode = (typeof PET_ACTION_MODES)[number];
 export type PetOneShotAction = (typeof PET_ONE_SHOT_ACTIONS)[number];
@@ -21,7 +30,7 @@ export type PetOneShotAction = (typeof PET_ONE_SHOT_ACTIONS)[number];
  * Checks whether a value is a supported pet action mode.
  *
  * Inputs: any unknown value received from menu state, IPC, or tests.
- * Returns: true only for `idle` or `walk`.
+ * Returns: true only for semantic persistent modes such as `idle` or `active`.
  * Errors: does not throw.
  * Side effects: none.
  */
@@ -33,7 +42,7 @@ export function isPetActionMode(value: unknown): value is PetActionMode {
  * Checks whether a value is a supported one-shot pet action.
  *
  * Inputs: any unknown value received from tray menu or IPC.
- * Returns: true only for `jump` or `spin`.
+ * Returns: true only for semantic one-shot interaction ids.
  * Errors: does not throw.
  * Side effects: none.
  */

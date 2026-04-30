@@ -40,6 +40,8 @@ export function resolveWindowMode(debugMode: boolean): ResolvedWindowMode {
     return {
       width: 520,
       height: 560,
+      minWidth: 120,
+      minHeight: 120,
       frame: true,
       resizable: true,
       transparent: false,

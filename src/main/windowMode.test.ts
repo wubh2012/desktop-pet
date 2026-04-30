@@ -22,19 +22,21 @@ describe('resolveWindowMode', () => {
       skipTaskbar: true,
       hasShadow: false
     });
+    expect(resolveWindowMode(false).minWidth).toBeUndefined();
+    expect(resolveWindowMode(false).minHeight).toBeUndefined();
   });
 
   test('debug mode shows a resizable framed window for manual sizing', () => {
     expect(resolveWindowMode(true)).toMatchObject({
       width: 520,
       height: 560,
+      minWidth: 120,
+      minHeight: 120,
       frame: true,
       resizable: true,
       transparent: false,
       skipTaskbar: false,
       hasShadow: true
     });
-    expect(resolveWindowMode(true).minWidth).toBeUndefined();
-    expect(resolveWindowMode(true).minHeight).toBeUndefined();
   });
 });

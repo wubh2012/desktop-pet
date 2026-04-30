@@ -21,14 +21,9 @@ export interface PetModeCommand {
   readonly mode: PetActionMode;
 }
 
-export interface PetOneShotCommand {
-  readonly type: 'oneShot';
+export interface PetActionCommand {
+  readonly type: 'action';
   readonly action: PetOneShotAction;
-}
-
-export interface PetMotionCommand {
-  readonly type: 'motion';
-  readonly name: string;
 }
 
 export interface PetLookAtMouseCommand {
@@ -38,8 +33,7 @@ export interface PetLookAtMouseCommand {
 
 export type PetCommand =
   | PetModeCommand
-  | PetOneShotCommand
-  | PetMotionCommand
+  | PetActionCommand
   | PetLookAtMouseCommand;
 
 export type PetCommandParseResult =
@@ -66,14 +60,10 @@ export function parsePetCommand(value: unknown): PetCommandParseResult {
       return isPetActionMode(value.mode)
         ? { ok: true, command: { type: 'mode', mode: value.mode } }
         : { ok: false, error: 'Invalid mode command.' };
-    case 'oneShot':
+    case 'action':
       return isPetOneShotAction(value.action)
-        ? { ok: true, command: { type: 'oneShot', action: value.action } }
-        : { ok: false, error: 'Invalid oneShot command.' };
-    case 'motion':
-      return typeof value.name === 'string' && value.name.trim().length > 0
-        ? { ok: true, command: { type: 'motion', name: value.name.trim() } }
-        : { ok: false, error: 'Invalid motion command.' };
+        ? { ok: true, command: { type: 'action', action: value.action } }
+        : { ok: false, error: 'Invalid action command.' };
     case 'lookAtMouse':
       return typeof value.enabled === 'boolean'
         ? { ok: true, command: { type: 'lookAtMouse', enabled: value.enabled } }

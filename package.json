@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@pixi/unsafe-eval": "^6.5.10",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.10",
     "three": "^0.184.0"

@@ -16,18 +16,30 @@ import {
 } from './petActionMode.js';
 
 describe('petActionMode', () => {
-  test('allows only idle and walk modes', () => {
-    expect(PET_ACTION_MODES).toEqual(['idle', 'walk']);
+  test('allows only semantic persistent modes', () => {
+    expect(PET_ACTION_MODES).toEqual(['idle', 'active']);
     expect(isPetActionMode('idle')).toBe(true);
-    expect(isPetActionMode('walk')).toBe(true);
+    expect(isPetActionMode('active')).toBe(true);
+    expect(isPetActionMode('walk')).toBe(false);
     expect(isPetActionMode('clicked')).toBe(false);
     expect(isPetActionMode('run')).toBe(false);
   });
 
-  test('allows only jump and spin one-shot actions', () => {
-    expect(PET_ONE_SHOT_ACTIONS).toEqual(['jump', 'spin']);
-    expect(isPetOneShotAction('jump')).toBe(true);
-    expect(isPetOneShotAction('spin')).toBe(true);
+  test('allows semantic one-shot actions only', () => {
+    expect(PET_ONE_SHOT_ACTIONS).toEqual([
+      'tease',
+      'pet',
+      'poke',
+      'surprise',
+      'cute',
+      'greet',
+      'cheer',
+      'attention'
+    ]);
+    expect(isPetOneShotAction('tease')).toBe(true);
+    expect(isPetOneShotAction('attention')).toBe(true);
+    expect(isPetOneShotAction('jump')).toBe(false);
+    expect(isPetOneShotAction('spin')).toBe(false);
     expect(isPetOneShotAction('idle')).toBe(false);
     expect(isPetOneShotAction('clicked')).toBe(false);
   });

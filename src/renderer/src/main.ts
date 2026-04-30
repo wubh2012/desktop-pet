@@ -24,6 +24,7 @@ import {
   type PetOneShotAction
 } from '../../shared/petActionMode';
 import { buildRendererAssetUrl } from './pet/assetUrl';
+import { createDragHandles } from './pet/dragHandles';
 import { showModelLoadFailure, showModelLoadSuccess } from './pet/loadStatus';
 import { calculateModelLayout } from './pet/modelLayout';
 import { hasDebugModelYawOverride, resolveModelYaw } from './pet/modelOrientation';
@@ -38,7 +39,6 @@ declare global {
       readonly platform: string;
       onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
       onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
-      onLive2DMotion(callback: (name: string) => void): () => void;
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
       openPetActionMenu(): Promise<void>;
@@ -56,8 +56,8 @@ if (!root) {
 
 const statusElement = createStatusElement();
 const canvasHost = createCanvasHost();
-const dragHandle = createDragHandle();
-root.append(canvasHost, dragHandle, statusElement);
+const dragHandles = createDragHandles();
+root.append(canvasHost, ...dragHandles, statusElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -123,9 +123,6 @@ window.desktopPet?.onOneShotAction((action) => {
     }
   }
 });
-window.desktopPet?.onLive2DMotion((name) => {
-  void live2dPetRenderer?.playMotionByName(name);
-});
 window.desktopPet?.onLookAtMouseChanged((enabled) => {
   lookAtMouseEnabled = enabled;
   live2dPetRenderer?.setLookAtMouseEnabled(enabled);
@@ -186,22 +183,6 @@ function createStatusElement(): HTMLDivElement {
   element.className = 'status';
   element.textContent = '加载中...';
   element.hidden = !import.meta.env.DEV;
-  return element;
-}
-
-/**
- * Creates an invisible native drag region.
- *
- * Inputs: none.
- * Returns: a fixed-position element that Electron treats as draggable window
- * chrome.
- * Errors: does not throw.
- * Side effects: none until the caller appends the element to the DOM.
- */
-function createDragHandle(): HTMLDivElement {
-  const element = document.createElement('div');
-  element.className = 'drag-handle';
-  element.setAttribute('aria-hidden', 'true');
   return element;
 }
 

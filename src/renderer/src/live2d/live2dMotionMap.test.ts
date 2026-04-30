@@ -13,12 +13,15 @@ import { describe, expect, test } from 'vitest';
 import { resolveLive2DMotion } from './live2dMotionMap';
 
 describe('resolveLive2DMotion', () => {
-  test('maps current app one-shot actions to Tororo motions', () => {
-    expect(resolveLive2DMotion('jump')).toEqual({ group: 'FlickUp', index: 0 });
-    expect(resolveLive2DMotion('spin')).toEqual({ group: 'Flick', index: 0 });
+  test('maps semantic direct actions to Tororo motions', () => {
+    expect(resolveLive2DMotion('tease')).toEqual({ group: 'FlickUp', index: 0 });
+    expect(resolveLive2DMotion('surprise')).toEqual({ group: 'FlickDown', index: 0 });
+    expect(resolveLive2DMotion('pet')).toEqual({ group: 'Tap', index: 0 });
+    expect(resolveLive2DMotion('poke')).toEqual({ group: 'Tap', index: 1 });
+    expect(resolveLive2DMotion('cute')).toEqual({ group: 'Tap', index: 2 });
   });
 
-  test('maps numbered external motion names to Tororo groups', () => {
+  test('keeps numbered motion names internal only', () => {
     expect(resolveLive2DMotion('01')).toEqual({ group: 'FlickUp', index: 0 });
     expect(resolveLive2DMotion('02')).toEqual({ group: 'FlickDown', index: 0 });
     expect(resolveLive2DMotion('03')).toEqual({ group: 'Tap', index: 0 });

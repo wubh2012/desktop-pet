@@ -23,6 +23,7 @@ import {
 } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appendFileSync } from 'node:fs';
 
 import {
   applySavedWindowBounds,
@@ -48,6 +49,7 @@ import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMo
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
+const debugLogPath = join(process.cwd(), 'desktop-pet-debug.log');
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -60,6 +62,27 @@ let isQuitting = false;
 let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
 
 /**
+ * Writes a main-process debug line when diagnostics are enabled.
+ *
+ * Inputs: text message without sensitive information.
+ * Returns: nothing.
+ * Errors: filesystem errors are ignored because diagnostics must not affect app
+ * behavior.
+ * Side effects: appends to `desktop-pet-debug.log` in the project directory.
+ */
+function writeDebugLog(message: string): void {
+  if (process.env.DESKTOP_PET_DEBUG_RENDERER !== '1') {
+    return;
+  }
+
+  try {
+    appendFileSync(debugLogPath, `[${new Date().toISOString()}] ${message}\n`, 'utf8');
+  } catch {
+    // Debug-only best effort logging.
+  }
+}
+
+/**
  * Creates the single desktop pet window.
  *
  * Inputs: none. Window dimensions and behavior are fixed for the MVP.
@@ -69,11 +92,13 @@ let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
  * Side effects: allocates a native transparent always-on-top window.
  */
 function createMainWindow(): BrowserWindow {
+  writeDebugLog('createMainWindow:start');
   const baseMode = resolveWindowMode(debugWindowMode);
   const mode = applySavedWindowBounds(
     baseMode,
     readDebugWindowBounds(getSettingsPath(), baseMode)
   );
+  let initialRendererStateSent = false;
   const window = new BrowserWindow({
     x: mode.x,
     y: mode.y,
@@ -98,11 +123,20 @@ function createMainWindow(): BrowserWindow {
       sandbox: false
     }
   });
+  writeDebugLog('createMainWindow:created');
 
   window.setMenu(null);
   window.setAlwaysOnTop(true, 'screen-saver');
 
+  if (process.env.DESKTOP_PET_DEBUG_RENDERER === '1') {
+    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      console.log(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+      writeDebugLog(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+    });
+  }
+
   window.on('close', (event) => {
+    writeDebugLog(`window:close debug=${debugWindowMode} quitting=${isQuitting}`);
     if (debugWindowMode) {
       saveDebugWindowBoundsNow(window);
     }
@@ -114,19 +148,40 @@ function createMainWindow(): BrowserWindow {
   });
 
   window.on('resize', () => {
+    writeDebugLog(`window:resize ${JSON.stringify(window.getBounds())}`);
     scheduleDebugWindowBoundsSave(window);
   });
 
   window.on('move', () => {
+    writeDebugLog(`window:move ${JSON.stringify(window.getBounds())}`);
     scheduleDebugWindowBoundsSave(window);
   });
-
-  window.once('ready-to-show', () => {
-    window.show();
-    sendActionModeToRenderer(window);
-    sendLookAtMouseToRenderer(window);
-    sendModelYawToRenderer(window);
+  window.on('closed', () => {
+    writeDebugLog('window:closed');
   });
+  window.webContents.on('render-process-gone', (_event, details) => {
+    writeDebugLog(`renderer:gone ${JSON.stringify(details)}`);
+  });
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    writeDebugLog(`renderer:did-fail-load code=${errorCode} description=${errorDescription} url=${validatedURL}`);
+  });
+  window.webContents.on('did-finish-load', () => {
+    writeDebugLog('renderer:did-finish-load');
+  });
+
+  const showWindowOnce = (): void => {
+    if (!initialRendererStateSent) {
+      initialRendererStateSent = true;
+      showMainWindowAndSendInitialState(window);
+    }
+  };
+
+  window.once('ready-to-show', showWindowOnce);
+  window.once('ready-to-show', () => {
+    writeDebugLog('window:ready-to-show');
+  });
+  window.webContents.once('did-finish-load', showWindowOnce);
+  setTimeout(showWindowOnce, 1000);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -135,6 +190,31 @@ function createMainWindow(): BrowserWindow {
   }
 
   return window;
+}
+
+/**
+ * Shows a renderer window and sends current main-process pet state.
+ *
+ * Inputs: `window` is the BrowserWindow created by `createMainWindow`.
+ * Returns: nothing.
+ * Errors: destroyed windows are ignored.
+ * Side effects: shows/focuses native UI and emits initial renderer IPC state.
+ */
+function showMainWindowAndSendInitialState(window: BrowserWindow): void {
+  if (window.isDestroyed()) {
+    writeDebugLog('showMainWindow:destroyed');
+    return;
+  }
+
+  writeDebugLog(`showMainWindow:before ${JSON.stringify(window.getBounds())}`);
+  window.show();
+  window.setAlwaysOnTop(true, 'screen-saver');
+  window.moveTop();
+  window.focus();
+  writeDebugLog(`showMainWindow:after visible=${window.isVisible()} focused=${window.isFocused()} ${JSON.stringify(window.getBounds())}`);
+  sendActionModeToRenderer(window);
+  sendLookAtMouseToRenderer(window);
+  sendModelYawToRenderer(window);
 }
 
 /**
@@ -252,7 +332,7 @@ function buildTrayMenu(): Menu {
     },
     ...modelOrientationTemplate,
     {
-      label: '动作',
+      label: '小猫互动',
       submenu: buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
     },
     { type: 'separator' },
@@ -398,7 +478,7 @@ function setActionMode(mode: PetActionMode): void {
 /**
  * Triggers a one-shot action in the renderer.
  *
- * Inputs: `action` is `jump` or `spin`.
+ * Inputs: `action` is a semantic one-shot interaction id.
  * Returns: nothing.
  * Errors: does not throw.
  * Side effects: emits one IPC message to renderer code.
@@ -406,27 +486,6 @@ function setActionMode(mode: PetActionMode): void {
 function triggerOneShotAction(action: PetOneShotAction): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('pet-one-shot-action', action);
-  }
-}
-
-/**
- * Triggers a Live2D-specific named motion in the renderer.
- *
- * Inputs: `name` is a non-empty motion name accepted by the Live2D renderer,
- * such as `01` for Tororo's `01.motion3.json`.
- * Returns: nothing.
- * Errors: empty names are ignored.
- * Side effects: emits one IPC message to renderer code.
- */
-function triggerLive2DMotion(name: string): void {
-  const normalizedName = name.trim();
-
-  if (!normalizedName) {
-    return;
-  }
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('pet-live2d-motion', normalizedName);
   }
 }
 
@@ -443,11 +502,8 @@ function dispatchPetCommand(command: PetCommand): void {
     case 'mode':
       setActionMode(command.mode);
       return;
-    case 'oneShot':
+    case 'action':
       triggerOneShotAction(command.action);
-      return;
-    case 'motion':
-      triggerLive2DMotion(command.name);
       return;
     case 'lookAtMouse':
       setLookAtMouseEnabled(command.enabled);
@@ -593,6 +649,7 @@ function setDebugWindowMode(enabled: boolean): void {
 }
 
 app.whenReady().then(() => {
+  writeDebugLog('app:ready');
   app.setName('Desktop Pet');
   currentModelYawRadians = readModelYaw(getSettingsPath()) ?? currentModelYawRadians;
   ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
@@ -614,8 +671,25 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  writeDebugLog(`app:window-all-closed quitting=${isQuitting}`);
   mainWindow = null;
   if (isQuitting) {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  writeDebugLog('app:before-quit');
+});
+
+app.on('will-quit', () => {
+  writeDebugLog('app:will-quit');
+});
+
+process.on('uncaughtException', (error) => {
+  writeDebugLog(`process:uncaughtException ${error.stack ?? error.message}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  writeDebugLog(`process:unhandledRejection ${String(reason)}`);
 });

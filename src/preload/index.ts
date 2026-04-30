@@ -35,8 +35,6 @@ export interface DesktopPetApi {
   onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
   /** Subscribes to one-shot action requests and returns an unsubscribe callback. */
   onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
-  /** Subscribes to Live2D named motion requests and returns an unsubscribe callback. */
-  onLive2DMotion(callback: (name: string) => void): () => void;
   /** Subscribes to look-at-mouse toggle changes and returns an unsubscribe callback. */
   onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
   /** Subscribes to persisted model yaw changes and returns an unsubscribe callback. */
@@ -51,7 +49,7 @@ const api: DesktopPetApi = {
   /**
    * Subscribes to tray-selected pet action changes.
    *
-   * Inputs: `callback` receives only validated `idle` or `walk` modes.
+   * Inputs: `callback` receives only validated semantic modes.
    * Returns: an unsubscribe function for removing the IPC listener.
    * Errors: invalid IPC payloads are ignored.
    * Side effects: registers an Electron IPC listener until unsubscribed.
@@ -73,7 +71,7 @@ const api: DesktopPetApi = {
   /**
    * Subscribes to tray-triggered one-shot pet actions.
    *
-   * Inputs: `callback` receives only validated `jump` or `spin` actions.
+   * Inputs: `callback` receives only validated semantic interaction actions.
    * Returns: an unsubscribe function for removing the IPC listener.
    * Errors: invalid IPC payloads are ignored.
    * Side effects: registers an Electron IPC listener until unsubscribed.
@@ -89,28 +87,6 @@ const api: DesktopPetApi = {
 
     return () => {
       ipcRenderer.removeListener('pet-one-shot-action', listener);
-    };
-  },
-
-  /**
-   * Subscribes to external Live2D named motion requests.
-   *
-   * Inputs: `callback` receives a non-empty motion name.
-   * Returns: an unsubscribe function for removing the IPC listener.
-   * Errors: invalid IPC payloads are ignored.
-   * Side effects: registers an Electron IPC listener until unsubscribed.
-   */
-  onLive2DMotion(callback: (name: string) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
-      if (typeof value === 'string' && value.trim().length > 0) {
-        callback(value.trim());
-      }
-    };
-
-    ipcRenderer.on('pet-live2d-motion', listener);
-
-    return () => {
-      ipcRenderer.removeListener('pet-live2d-motion', listener);
     };
   },
 

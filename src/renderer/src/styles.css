@@ -5,8 +5,9 @@
  * Three.js canvas while preserving pointer interaction on the model. It does
  * not define application state or load external assets.
  *
- * Side effects: CSS `app-region` enables native window dragging across the
- * transparent surface, while the canvas opts out so clicks reach Three.js.
+ * Side effects: CSS `app-region` enables native window dragging around the
+ * transparent window edges, while the canvas center opts out so clicks reach
+ * the pet renderer.
  *
  * Key constraints: backgrounds must remain transparent for Electron window
  * transparency, and visible text must be limited to development status.
@@ -56,12 +57,38 @@ body {
 
 .drag-handle {
   position: fixed;
-  top: 0;
-  left: 72px;
-  right: 72px;
-  height: 38px;
   background: transparent;
+  cursor: move;
+  z-index: 2;
   -webkit-app-region: drag;
+}
+
+.drag-handle--top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: min(52px, 45vh);
+}
+
+.drag-handle--bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(30px, 24vh);
+}
+
+.drag-handle--left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(32px, 22vw);
+}
+
+.drag-handle--right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(32px, 22vw);
 }
 
 .status {

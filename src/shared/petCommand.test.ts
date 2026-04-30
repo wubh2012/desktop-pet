@@ -18,20 +18,16 @@ describe('parsePetCommand', () => {
       ok: true,
       command: { type: 'mode', mode: 'idle' }
     });
-    expect(parsePetCommand({ type: 'mode', mode: 'walk' })).toEqual({
+    expect(parsePetCommand({ type: 'mode', mode: 'active' })).toEqual({
       ok: true,
-      command: { type: 'mode', mode: 'walk' }
+      command: { type: 'mode', mode: 'active' }
     });
   });
 
-  test('accepts one-shot and Live2D motion commands', () => {
-    expect(parsePetCommand({ type: 'oneShot', action: 'jump' })).toEqual({
+  test('accepts semantic action commands', () => {
+    expect(parsePetCommand({ type: 'action', action: 'tease' })).toEqual({
       ok: true,
-      command: { type: 'oneShot', action: 'jump' }
-    });
-    expect(parsePetCommand({ type: 'motion', name: '01' })).toEqual({
-      ok: true,
-      command: { type: 'motion', name: '01' }
+      command: { type: 'action', action: 'tease' }
     });
   });
 
@@ -48,9 +44,13 @@ describe('parsePetCommand', () => {
       ok: false,
       error: 'Invalid mode command.'
     });
-    expect(parsePetCommand({ type: 'motion', name: '' })).toEqual({
+    expect(parsePetCommand({ type: 'action', action: 'jump' })).toEqual({
       ok: false,
-      error: 'Invalid motion command.'
+      error: 'Invalid action command.'
+    });
+    expect(parsePetCommand({ type: 'motion', name: '01' })).toEqual({
+      ok: false,
+      error: 'Unknown command type.'
     });
     expect(parsePetCommand({ type: 'lookAtMouse', enabled: 'yes' })).toEqual({
       ok: false,

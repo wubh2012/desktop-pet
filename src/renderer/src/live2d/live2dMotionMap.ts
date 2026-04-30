@@ -26,14 +26,18 @@ const MOTION_MAP: Readonly<Record<string, Live2DMotionRef>> = {
   '06': { group: 'Tap', index: 1 },
   '07': { group: 'Tap', index: 2 },
   '08': { group: 'Idle', index: 2 },
-  jump: { group: 'FlickUp', index: 0 },
-  spin: { group: 'Flick', index: 0 }
+  tease: { group: 'FlickUp', index: 0 },
+  surprise: { group: 'FlickDown', index: 0 },
+  pet: { group: 'Tap', index: 0 },
+  poke: { group: 'Tap', index: 1 },
+  cute: { group: 'Tap', index: 2 },
+  active: { group: 'Flick', index: 0 }
 };
 
 /**
- * Resolves a public motion name into a Tororo Cubism motion reference.
+ * Resolves an internal motion alias into a Tororo Cubism motion reference.
  *
- * Inputs: action or motion name such as `jump`, `spin`, or `01`.
+ * Inputs: semantic direct action or internal numbered motion name such as `01`.
  * Returns: motion group/index when supported, otherwise null.
  * Errors: does not throw.
  * Side effects: none.

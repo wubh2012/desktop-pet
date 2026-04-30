@@ -61,7 +61,7 @@ describe('PetController', () => {
   test('returns to the previous mode after a click reaction finishes', () => {
     const controller = new PetController();
 
-    controller.setMode('walk');
+    controller.setMode('active');
     controller.click();
 
     const duringClick = controller.update(0.12);
@@ -71,33 +71,33 @@ describe('PetController', () => {
     controller.update(0.5);
     const afterClick = controller.update(0.1);
 
-    expect(afterClick.state).toBe('walk');
+    expect(afterClick.state).toBe('active');
   });
 
-  test('plays a one-shot jump and returns to the previous mode', () => {
+  test('plays an energetic one-shot action and returns to the previous mode', () => {
     const controller = new PetController();
 
-    controller.setMode('walk');
-    controller.triggerOneShot('jump');
+    controller.setMode('active');
+    controller.triggerOneShot('tease');
 
     const duringJump = controller.update(0.16);
-    expect(duringJump.state).toBe('jump');
+    expect(duringJump.state).toBe('tease');
     expect(duringJump.position.y).toBeGreaterThan(0.1);
     expect(duringJump.scale.x).toBeGreaterThan(1);
 
     controller.update(0.6);
     const afterJump = controller.update(0.1);
-    expect(afterJump.state).toBe('walk');
+    expect(afterJump.state).toBe('active');
   });
 
-  test('plays a one-shot spin and returns to idle', () => {
+  test('plays a gentle one-shot action and returns to idle', () => {
     const controller = new PetController();
 
-    controller.triggerOneShot('spin');
+    controller.triggerOneShot('pet');
 
     const duringSpin = controller.update(0.25);
-    expect(duringSpin.state).toBe('spin');
-    expect(duringSpin.rotation.y).toBeGreaterThan(1);
+    expect(duringSpin.state).toBe('pet');
+    expect(Math.abs(duringSpin.rotation.y)).toBeGreaterThan(0.1);
 
     controller.update(1);
     const afterSpin = controller.update(0.1);
@@ -117,7 +117,7 @@ describe('PetController', () => {
   test('keeps walking inside the configured horizontal range', () => {
     const controller = new PetController({ walkRange: 0.35, walkSpeed: 0.4 });
 
-    controller.setMode('walk');
+    controller.setMode('active');
 
     for (let frame = 0; frame < 240; frame += 1) {
       const transform = controller.update(1 / 60);

@@ -46,7 +46,7 @@ export interface PetActionMenuState {
  * Side effects: caller-owned; usually updates app state and sends renderer IPC.
  */
 export interface PetActionMenuHandlers {
-  /** Selects a persistent pet action mode such as idle or walk. */
+  /** Selects a persistent pet action mode such as idle or active. */
   setActionMode(mode: PetActionMode): void;
   /** Triggers a transient action without changing the persistent mode. */
   triggerOneShotAction(action: PetOneShotAction): void;
@@ -69,24 +69,21 @@ export function buildPetActionMenuTemplate(
   handlers: PetActionMenuHandlers
 ): MenuItemConstructorOptions[] {
   return [
-    ...PET_ACTION_MODES.map((mode) => ({
-      label: mode === 'idle' ? '待机' : '行走',
-      type: 'radio' as const,
-      checked: state.currentActionMode === mode,
-      click: () => {
-        handlers.setActionMode(mode);
-      }
-    })),
+    { label: '状态', enabled: false },
+    ...PET_ACTION_MODES.map((mode) => buildModeMenuItem(mode, state, handlers)),
     { type: 'separator' as const },
-    ...PET_ONE_SHOT_ACTIONS.map((action) => ({
-      label: action === 'jump' ? '跳一下' : '转一圈',
-      click: () => {
-        handlers.triggerOneShotAction(action);
-      }
-    })),
+    { label: '互动', enabled: false },
+    ...PET_ONE_SHOT_ACTIONS.filter((action) =>
+      ['tease', 'pet', 'poke', 'surprise', 'cute'].includes(action)
+    ).map((action) => buildOneShotMenuItem(action, handlers)),
+    { type: 'separator' as const },
+    { label: '小剧场', enabled: false },
+    ...PET_ONE_SHOT_ACTIONS.filter((action) =>
+      ['greet', 'cheer', 'attention'].includes(action)
+    ).map((action) => buildOneShotMenuItem(action, handlers)),
     { type: 'separator' as const },
     {
-      label: '看向鼠标',
+      label: '看着鼠标',
       type: 'checkbox' as const,
       checked: state.lookAtMouseEnabled,
       click: () => {
@@ -94,4 +91,76 @@ export function buildPetActionMenuTemplate(
       }
     }
   ];
+}
+
+/**
+ * Builds one persistent-mode radio menu item.
+ *
+ * Inputs: semantic mode id plus current state and callbacks.
+ * Returns: Electron menu item for selecting the mode.
+ * Errors: does not throw for known mode ids.
+ * Side effects: click handler delegates to caller-owned state mutation.
+ */
+function buildModeMenuItem(
+  mode: PetActionMode,
+  state: PetActionMenuState,
+  handlers: PetActionMenuHandlers
+): MenuItemConstructorOptions {
+  return {
+    label: mode === 'idle' ? '安静陪伴' : '活泼一点',
+    type: 'radio' as const,
+    checked: state.currentActionMode === mode,
+    click: () => {
+      handlers.setActionMode(mode);
+    }
+  };
+}
+
+/**
+ * Builds one semantic interaction menu item.
+ *
+ * Inputs: semantic one-shot action id and caller callbacks.
+ * Returns: Electron menu item for triggering the interaction.
+ * Errors: does not throw for known action ids.
+ * Side effects: click handler delegates to caller-owned IPC dispatch.
+ */
+function buildOneShotMenuItem(
+  action: PetOneShotAction,
+  handlers: PetActionMenuHandlers
+): MenuItemConstructorOptions {
+  return {
+    label: getOneShotActionLabel(action),
+    click: () => {
+      handlers.triggerOneShotAction(action);
+    }
+  };
+}
+
+/**
+ * Resolves the user-facing label for a semantic one-shot action.
+ *
+ * Inputs: semantic action id.
+ * Returns: concise Chinese label for tray and context menus.
+ * Errors: exhaustive switch returns a label for every supported action.
+ * Side effects: none.
+ */
+function getOneShotActionLabel(action: PetOneShotAction): string {
+  switch (action) {
+    case 'tease':
+      return '逗它一下';
+    case 'pet':
+      return '摸摸它';
+    case 'poke':
+      return '轻轻碰它';
+    case 'surprise':
+      return '小小惊讶';
+    case 'cute':
+      return '卖个萌';
+    case 'greet':
+      return '打个招呼';
+    case 'cheer':
+      return '精神一下';
+    case 'attention':
+      return '求关注';
+  }
 }
