@@ -1,24 +1,33 @@
 # Desktop Pet
 
-基于 Electron、Vite、TypeScript 和 Three.js 的 3D 桌面电子宠物 MVP。
+基于 Electron、Vite、TypeScript、Live2D 和 Three.js 的桌面电子宠物。
 
-当前版本使用本地 `public/assets/pet.glb` 模型，在透明置顶窗口中渲染一个 3D 宠物。模型目前是静态 GLB，没有骨骼、内置动画或 morph target，所以第一版只做整体待机浮动和点击反馈，不做手臂、腿、表情等局部动作。
+当前默认桌宠是 Live2D 官方 Sample Data 白猫 Tororo。Three.js 版本仍保留为备用渲染器，用于继续加载本地 `public/assets/pet.glb`。
 
 ## 功能
 
 - 透明、无边框、置顶桌宠窗口。
-- Three.js 加载本地 GLB 模型。
-- 默认待机动画，不自动左右移动。
-- 点击模型时触发短暂弹跳反馈。
-- 系统托盘图标与右键菜单。
+- Live2D 白猫 Tororo：眨眼、呼吸、互动动作、看着鼠标。
+- 托盘菜单和宠物右键菜单。
+- `小猫互动` 菜单：
+  - `状态`：安静陪伴、活泼一点
+  - `互动`：逗它一下、摸摸它、轻轻碰它、小小惊讶、卖个萌
+  - `小剧场`：打个招呼、精神一下、求关注
+  - 看着鼠标
 - 调试窗口模式：显示普通窗口边框，允许用户调整窗口大小。
 - 调试窗口调整后的 `x/y/width/height` 会保存，并同步到退出调试模式后的透明桌宠窗口。
+- 窗口四边有隐形拖动区，小窗口下也更容易拖动。
+- 本地 HTTP API，可由外部程序用语义化命令控制桌宠。
+- Three.js GLB 渲染器保留，可通过 `?renderer=three` 使用。
 
 ## 技术栈
 
 - Electron
 - Vite / electron-vite
 - TypeScript
+- PixiJS
+- pixi-live2d-display
+- Live2D Cubism Core
 - Three.js
 - Vitest
 
@@ -58,16 +67,84 @@ npm run typecheck
 
 ## 使用方式
 
-- 桌宠启动后默认显示透明置顶窗口。
-- 点击宠物会触发弹跳反馈。
-- 右键点击宠物本体可以直接打开动作菜单；右键透明空白区域不会弹菜单。
-- 右键系统托盘图标可以打开菜单：
+- 启动后默认显示 Live2D 白猫桌宠。
+- 右键点击宠物本体可以打开 `小猫互动` 菜单。
+- 右键系统托盘图标可以打开完整菜单：
   - `显示宠物 / 隐藏宠物`
-  - `动作`：切换 `待机` 或 `行走`，也可以触发 `跳一下`、`转一圈`，或开启 `看向鼠标`
   - `调试窗口模式`
+  - `小猫互动`
   - `退出`
+- 拖动窗口时优先拖窗口四边缘，避免和点击宠物互动冲突。
 - 打开 `调试窗口模式` 后，可以像普通窗口一样调整大小。
 - 退出调试模式后，透明桌宠窗口会沿用刚才调试窗口的大小和位置。
+
+## HTTP API
+
+应用启动后会尝试监听：
+
+```text
+http://127.0.0.1:17321
+```
+
+控制端点：
+
+```text
+POST /pet/command
+Content-Type: application/json
+```
+
+切换状态：
+
+```json
+{ "type": "mode", "mode": "idle" }
+```
+
+```json
+{ "type": "mode", "mode": "active" }
+```
+
+触发一次互动：
+
+```json
+{ "type": "action", "action": "tease" }
+```
+
+可用 `action`：
+
+```text
+tease      逗它一下
+pet        摸摸它
+poke       轻轻碰它
+surprise   小小惊讶
+cute       卖个萌
+greet      打个招呼
+cheer      精神一下
+attention  求关注
+```
+
+看着鼠标：
+
+```json
+{ "type": "lookAtMouse", "enabled": true }
+```
+
+关闭看着鼠标：
+
+```json
+{ "type": "lookAtMouse", "enabled": false }
+```
+
+示例：
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:17321/pet/command `
+  -ContentType 'application/json' `
+  -Body '{"type":"action","action":"greet"}'
+```
+
+对外 API 使用语义化命令，不暴露 Live2D 原始 motion 编号。
 
 ## 配置文件
 
@@ -88,7 +165,8 @@ npm run typecheck
     "y": 450,
     "width": 223,
     "height": 183
-  }
+  },
+  "modelYawRadians": 0
 }
 ```
 
@@ -96,7 +174,17 @@ npm run typecheck
 
 ## 资源
 
-主模型文件：
+默认 Live2D 桌宠模板：
+
+```text
+public/live2d/core/live2dcubismcore.min.js
+public/live2d/tororo/tororo.model3.json
+public/live2d/tororo/tororo.moc3
+public/live2d/tororo/tororo.2048/texture_00.png
+public/live2d/tororo/motion/*.motion3.json
+```
+
+Three.js 备用 GLB：
 
 ```text
 public/assets/pet.glb
@@ -116,7 +204,9 @@ node scripts/fix-glb-materials.mjs public/assets/pet.glb public/assets/pet.glb
 
 ```text
 src/main/
-  index.ts              Electron 主进程、窗口和托盘
+  index.ts              Electron 主进程、窗口、托盘和 HTTP API
+  petActionMenu.ts      小猫互动菜单模板
+  petCommandServer.ts   本地 HTTP 命令服务
   windowMode.ts         普通模式 / 调试模式窗口配置
   windowSettings.ts     窗口 bounds 读写与归一化
 
@@ -125,24 +215,32 @@ src/preload/
 
 src/renderer/
   index.html            Renderer HTML 入口
-  src/main.ts           Three.js 场景、GLB 加载、点击检测
-  src/styles.css        透明窗口和画布样式
+  src/main.ts           渲染器入口，选择 Live2D 或 Three.js
+  src/styles.css        透明窗口、画布和拖动区样式
+  src/live2d/
+    Live2DPetRenderer.ts      Live2D 白猫渲染和互动执行
+    live2dActionSequence.ts   语义化动作组合
+    live2dLayout.ts           Live2D 缩放和布局
+    live2dMotionMap.ts        Tororo motion 映射
+    live2dViewport.ts         Live2D 画布尺寸
   src/pet/
-    PetController.ts    程序化宠物状态机
-    assetUrl.ts         renderer 静态资源路径
-    modelCapabilities.ts GLB 能力检测
-    modelLayout.ts      模型缩放和居中计算
+    PetController.ts          Three.js 备用程序化状态机
+    dragHandles.ts            透明窗口拖动区
+    assetUrl.ts               renderer 静态资源路径
+    modelCapabilities.ts      GLB 能力检测
+    modelLayout.ts            GLB 模型缩放和居中计算
 ```
 
 ## 当前限制
 
-- 当前 GLB 没有 `animations`、`skins`、`morph targets`，所以不能自然控制手臂、腿、表情或嘴型。
-- 第一版不做聊天、语音、养成数值、开机自启、自动更新。
-- Windows 是主要验收平台；macOS/Linux 后续需要单独适配窗口行为。
+- Tororo 的新增互动基于已有 motion 和程序组合，不是新制作的 Live2D 动作文件。
+- 看着鼠标使用 Live2D focus 参数，不是 motion 文件。
+- Three.js 版本只做备用展示，互动效果会降级为整体模型变换。
+- Windows 是主要验收平台；macOS/Linux 后续需要单独适配透明窗口和置顶行为。
 
 ## 后续方向
 
-- 接入带骨骼和动画 clips 的 GLB，使用 Three.js `AnimationMixer` 播放真实动作。
-- 如果模型支持 morph target，增加表情控制。
-- 增加托盘设置项，例如重置窗口尺寸、切换待机/行走。
+- 接入更多 Live2D 模型，并做模型切换。
+- 使用 Live2D Cubism Editor 制作新的 `.motion3.json` 自定义动作。
+- 增加语音、对话、系统事件触发和更丰富的外部 API。
 - 接入打包工具生成安装包。
