@@ -1,0 +1,80 @@
+/**
+ * Transparent renderer styles for the desktop pet.
+ *
+ * Responsibility: makes the Electron window visually disappear around the
+ * Three.js canvas while preserving pointer interaction on the model. It does
+ * not define application state or load external assets.
+ *
+ * Side effects: CSS `app-region` enables native window dragging across the
+ * transparent surface, while the canvas opts out so clicks reach Three.js.
+ *
+ * Key constraints: backgrounds must remain transparent for Electron window
+ * transparency, and visible text must be limited to development status.
+ */
+
+:root {
+  font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  color: rgba(255, 255, 255, 0.86);
+  background: transparent;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.canvas-host {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.canvas-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.drag-handle {
+  position: fixed;
+  top: 0;
+  left: 72px;
+  right: 72px;
+  height: 38px;
+  background: transparent;
+  -webkit-app-region: drag;
+}
+
+.status {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgba(16, 18, 24, 0.58);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  line-height: 1.3;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-host canvas {
+    cursor: default;
+  }
+}

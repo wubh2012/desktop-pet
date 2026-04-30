@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+release/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Runtime and local logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local screenshots and source-model duplicates
+PixPin_*.png
+/pet.glb

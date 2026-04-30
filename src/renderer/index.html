@@ -1,0 +1,26 @@
+<!--
+  Renderer HTML entry for the desktop pet.
+
+  Responsibility: hosts the transparent Three.js canvas root. It does not load
+  external network assets or define application behavior.
+
+  Side effects: loading this document runs the bundled renderer module.
+  Constraints: keep the body transparent so Electron window transparency is
+  visible on the desktop.
+-->
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* http://localhost:*; worker-src 'self' blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop Pet</title>
+  </head>
+  <body>
+    <div id="app" aria-label="桌面宠物"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
