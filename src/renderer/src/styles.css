@@ -48,6 +48,12 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.live2d-canvas {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
 .drag-handle {
   position: fixed;
   top: 0;

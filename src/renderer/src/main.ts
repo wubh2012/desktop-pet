@@ -30,6 +30,7 @@ import { hasDebugModelYawOverride, resolveModelYaw } from './pet/modelOrientatio
 import { repairMissingMaterials } from './pet/materialRepair';
 import { PetController, type PetTransform } from './pet/PetController';
 import { detectModelCapabilities } from './pet/modelCapabilities';
+import { Live2DPetRenderer } from './live2d/Live2DPetRenderer';
 
 declare global {
   interface Window {
@@ -37,6 +38,7 @@ declare global {
       readonly platform: string;
       onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
       onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
+      onLive2DMotion(callback: (name: string) => void): () => void;
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
       openPetActionMenu(): Promise<void>;
@@ -45,6 +47,7 @@ declare global {
 }
 
 const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'assets/pet.glb');
+const rendererMode = resolveRendererMode(window.location.search);
 const root = document.querySelector<HTMLDivElement>('#app');
 
 if (!root) {
@@ -70,6 +73,20 @@ renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 canvasHost.append(renderer.domElement);
 
+const live2dPetRenderer =
+  rendererMode === 'live2d'
+    ? new Live2DPetRenderer({
+        host: canvasHost,
+        statusElement,
+        openActionMenu: () => window.desktopPet?.openPetActionMenu()
+      })
+    : null;
+
+if (live2dPetRenderer) {
+  renderer.domElement.hidden = true;
+  renderer.domElement.style.pointerEvents = 'none';
+}
+
 const petController = new PetController({ walkRange: 0.26, walkSpeed: 0.16 });
 const loader = new GLTFLoader();
 const clock = new THREE.Clock();
@@ -90,16 +107,28 @@ renderer.domElement.addEventListener('pointermove', handlePointerMove);
 renderer.domElement.addEventListener('contextmenu', handleContextMenu);
 window.desktopPet?.onActionModeChanged((mode) => {
   if (isPetActionMode(mode)) {
-    petController.setMode(mode);
+    if (live2dPetRenderer) {
+      live2dPetRenderer.setMode(mode);
+    } else {
+      petController.setMode(mode);
+    }
   }
 });
 window.desktopPet?.onOneShotAction((action) => {
   if (isPetOneShotAction(action)) {
-    petController.triggerOneShot(action);
+    if (live2dPetRenderer) {
+      live2dPetRenderer.triggerOneShot(action);
+    } else {
+      petController.triggerOneShot(action);
+    }
   }
+});
+window.desktopPet?.onLive2DMotion((name) => {
+  void live2dPetRenderer?.playMotionByName(name);
 });
 window.desktopPet?.onLookAtMouseChanged((enabled) => {
   lookAtMouseEnabled = enabled;
+  live2dPetRenderer?.setLookAtMouseEnabled(enabled);
 
   if (!enabled) {
     pointerLookX = 0;
@@ -111,8 +140,24 @@ window.desktopPet?.onModelYawChanged((yawRadians) => {
   }
 });
 
-void loadPetModel();
-requestAnimationFrame(animate);
+if (live2dPetRenderer) {
+  void live2dPetRenderer.initialize();
+} else {
+  void loadPetModel();
+  requestAnimationFrame(animate);
+}
+
+/**
+ * Resolves which renderer implementation should be shown.
+ *
+ * Inputs: URL search string from the Electron renderer window.
+ * Returns: `three` only when explicitly requested; otherwise `live2d`.
+ * Errors: does not throw for malformed query strings.
+ * Side effects: none.
+ */
+function resolveRendererMode(search: string): 'live2d' | 'three' {
+  return new URLSearchParams(search).get('renderer') === 'three' ? 'three' : 'live2d';
+}
 
 /**
  * Creates the transparent canvas host element.
@@ -393,4 +438,5 @@ function resizeRenderer(): void {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height, false);
+  live2dPetRenderer?.resize();
 }

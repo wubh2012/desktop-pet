@@ -1,8 +1,8 @@
 <!--
   Renderer HTML entry for the desktop pet.
 
-  Responsibility: hosts the transparent Three.js canvas root. It does not load
-  external network assets or define application behavior.
+  Responsibility: hosts the transparent renderer root and local Live2D Cubism
+  Core runtime. It does not define application behavior.
 
   Side effects: loading this document runs the bundled renderer module.
   Constraints: keep the body transparent so Electron window transparency is
@@ -21,6 +21,7 @@
   </head>
   <body>
     <div id="app" aria-label="桌面宠物"></div>
+    <script src="/live2d/core/live2dcubismcore.min.js"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

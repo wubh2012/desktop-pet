@@ -35,10 +35,15 @@ import {
 import { resolveWindowMode } from './windowMode.js';
 import { buildModelOrientationMenuTemplate } from './modelOrientationMenu.js';
 import {
+  startPetCommandServer,
+  type PetCommandServer
+} from './petCommandServer.js';
+import {
   buildPetActionMenuTemplate,
   type PetActionMenuHandlers,
   type PetActionMenuState
 } from './petActionMenu.js';
+import type { PetCommand } from '../shared/petCommand.js';
 import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMode.js';
 
 const currentFile = fileURLToPath(import.meta.url);
@@ -46,6 +51,7 @@ const currentDirectory = dirname(currentFile);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let petCommandServer: PetCommandServer | null = null;
 let debugWindowMode = false;
 let currentActionMode: PetActionMode = 'idle';
 let lookAtMouseEnabled = false;
@@ -404,6 +410,52 @@ function triggerOneShotAction(action: PetOneShotAction): void {
 }
 
 /**
+ * Triggers a Live2D-specific named motion in the renderer.
+ *
+ * Inputs: `name` is a non-empty motion name accepted by the Live2D renderer,
+ * such as `01` for Tororo's `01.motion3.json`.
+ * Returns: nothing.
+ * Errors: empty names are ignored.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function triggerLive2DMotion(name: string): void {
+  const normalizedName = name.trim();
+
+  if (!normalizedName) {
+    return;
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pet-live2d-motion', normalizedName);
+  }
+}
+
+/**
+ * Dispatches a validated external command to local app behavior.
+ *
+ * Inputs: parsed pet command from the local HTTP API.
+ * Returns: nothing.
+ * Errors: does not throw for known command variants.
+ * Side effects: may update menu state, send renderer IPC, or refresh the tray.
+ */
+function dispatchPetCommand(command: PetCommand): void {
+  switch (command.type) {
+    case 'mode':
+      setActionMode(command.mode);
+      return;
+    case 'oneShot':
+      triggerOneShotAction(command.action);
+      return;
+    case 'motion':
+      triggerLive2DMotion(command.name);
+      return;
+    case 'lookAtMouse':
+      setLookAtMouseEnabled(command.enabled);
+      return;
+  }
+}
+
+/**
  * Sets whether renderer should steer the pet toward the mouse pointer.
  *
  * Inputs: boolean enabled state.
@@ -488,6 +540,28 @@ function sendModelYawToRenderer(window: BrowserWindow): void {
 }
 
 /**
+ * Starts the local HTTP command API if the port is available.
+ *
+ * Inputs: none; uses fixed localhost settings for the MVP.
+ * Returns: promise resolved after startup attempt finishes.
+ * Errors: startup failures are logged and swallowed so the desktop pet still
+ * opens even if the API port is occupied.
+ * Side effects: may bind `127.0.0.1:17321`.
+ */
+async function startLocalCommandApi(): Promise<void> {
+  try {
+    petCommandServer = await startPetCommandServer({
+      host: '127.0.0.1',
+      port: 17321,
+      onCommand: dispatchPetCommand
+    });
+    console.info(`Desktop Pet command API listening on ${petCommandServer.url}`);
+  } catch (error) {
+    console.error('Failed to start Desktop Pet command API.', error);
+  }
+}
+
+/**
  * Toggles debug window mode by recreating the BrowserWindow.
  *
  * Inputs: `enabled` true creates a framed, resizable debug window; false
@@ -525,12 +599,18 @@ app.whenReady().then(() => {
 
   mainWindow = createMainWindow();
   initializeTray();
+  void startLocalCommandApi();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
     }
   });
+});
+
+app.on('before-quit', () => {
+  void petCommandServer?.close();
+  petCommandServer = null;
 });
 
 app.on('window-all-closed', () => {
