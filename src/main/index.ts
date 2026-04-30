@@ -27,10 +27,13 @@ import { fileURLToPath } from 'node:url';
 import {
   applySavedWindowBounds,
   readDebugWindowBounds,
+  readModelYaw,
+  writeModelYaw,
   writeDebugWindowBounds,
   type WindowBounds
 } from './windowSettings.js';
 import { resolveWindowMode } from './windowMode.js';
+import { buildModelOrientationMenuTemplate } from './modelOrientationMenu.js';
 import {
   buildPetActionMenuTemplate,
   type PetActionMenuHandlers,
@@ -46,6 +49,7 @@ let tray: Tray | null = null;
 let debugWindowMode = false;
 let currentActionMode: PetActionMode = 'idle';
 let lookAtMouseEnabled = false;
+let currentModelYawRadians = 0;
 let isQuitting = false;
 let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
 
@@ -115,6 +119,7 @@ function createMainWindow(): BrowserWindow {
     window.show();
     sendActionModeToRenderer(window);
     sendLookAtMouseToRenderer(window);
+    sendModelYawToRenderer(window);
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -208,6 +213,10 @@ function saveDebugWindowBoundsNow(window: BrowserWindow): void {
  */
 function buildTrayMenu(): Menu {
   const visible = mainWindow?.isVisible() ?? false;
+  const modelOrientationTemplate = buildModelOrientationMenuTemplate(
+    { debugWindowMode, currentYawRadians: currentModelYawRadians },
+    { setModelYaw }
+  );
 
   return Menu.buildFromTemplate([
     {
@@ -235,6 +244,7 @@ function buildTrayMenu(): Menu {
         setDebugWindowMode(!debugWindowMode);
       }
     },
+    ...modelOrientationTemplate,
     {
       label: '动作',
       submenu: buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
@@ -412,6 +422,30 @@ function setLookAtMouseEnabled(enabled: boolean): void {
 }
 
 /**
+ * Sets the GLB model base yaw from the debug tray menu.
+ *
+ * Inputs: `yawRadians` is a finite Y-axis rotation in radians.
+ * Returns: nothing.
+ * Errors: invalid yaw values are ignored.
+ * Side effects: updates in-memory state, persists settings, sends IPC to the
+ * renderer, and refreshes tray radio state.
+ */
+function setModelYaw(yawRadians: number): void {
+  if (!Number.isFinite(yawRadians)) {
+    return;
+  }
+
+  currentModelYawRadians = yawRadians;
+  writeModelYaw(getSettingsPath(), currentModelYawRadians);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sendModelYawToRenderer(mainWindow);
+  }
+
+  refreshTrayMenu();
+}
+
+/**
  * Sends the current pet action mode to a renderer window.
  *
  * Inputs: target `BrowserWindow`.
@@ -436,6 +470,20 @@ function sendActionModeToRenderer(window: BrowserWindow): void {
 function sendLookAtMouseToRenderer(window: BrowserWindow): void {
   if (!window.isDestroyed()) {
     window.webContents.send('pet-look-at-mouse-changed', lookAtMouseEnabled);
+  }
+}
+
+/**
+ * Sends current persisted GLB yaw to a renderer window.
+ *
+ * Inputs: target `BrowserWindow`.
+ * Returns: nothing.
+ * Errors: does not throw for destroyed windows.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function sendModelYawToRenderer(window: BrowserWindow): void {
+  if (!window.isDestroyed()) {
+    window.webContents.send('pet-model-yaw-changed', currentModelYawRadians);
   }
 }
 
@@ -472,6 +520,7 @@ function setDebugWindowMode(enabled: boolean): void {
 
 app.whenReady().then(() => {
   app.setName('Desktop Pet');
+  currentModelYawRadians = readModelYaw(getSettingsPath()) ?? currentModelYawRadians;
   ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
 
   mainWindow = createMainWindow();

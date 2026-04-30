@@ -37,6 +37,8 @@ export interface DesktopPetApi {
   onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
   /** Subscribes to look-at-mouse toggle changes and returns an unsubscribe callback. */
   onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+  /** Subscribes to persisted model yaw changes and returns an unsubscribe callback. */
+  onModelYawChanged(callback: (yawRadians: number) => void): () => void;
   /** Requests that the main process open the native pet action context menu. */
   openPetActionMenu(): Promise<void>;
 }
@@ -107,6 +109,28 @@ const api: DesktopPetApi = {
 
     return () => {
       ipcRenderer.removeListener('pet-look-at-mouse-changed', listener);
+    };
+  },
+
+  /**
+   * Subscribes to tray-selected GLB model yaw changes.
+   *
+   * Inputs: `callback` receives finite radians only.
+   * Returns: an unsubscribe function for removing the IPC listener.
+   * Errors: invalid IPC payloads are ignored.
+   * Side effects: registers an Electron IPC listener until unsubscribed.
+   */
+  onModelYawChanged(callback: (yawRadians: number) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        callback(value);
+      }
+    };
+
+    ipcRenderer.on('pet-model-yaw-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-model-yaw-changed', listener);
     };
   },
 

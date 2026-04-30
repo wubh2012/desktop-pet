@@ -7,9 +7,19 @@
  *
  * Key dependencies: Vitest and the public helpers from `windowSettings`.
  */
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, test } from 'vitest';
 
-import { applySavedWindowBounds, normalizeDebugBounds } from './windowSettings.js';
+import {
+  applySavedWindowBounds,
+  normalizeDebugBounds,
+  normalizeModelYaw,
+  readModelYaw,
+  writeModelYaw
+} from './windowSettings.js';
 
 describe('windowSettings', () => {
   test('keeps valid debug bounds while enforcing minimum size', () => {
@@ -52,5 +62,37 @@ describe('windowSettings', () => {
 
     expect(normal).toMatchObject(saved);
     expect(debug).toMatchObject(saved);
+  });
+
+  test('keeps finite model yaw values and rejects invalid values', () => {
+    expect(normalizeModelYaw(0)).toBe(0);
+    expect(normalizeModelYaw(Math.PI)).toBeCloseTo(Math.PI);
+    expect(normalizeModelYaw(Number.NaN)).toBeNull();
+    expect(normalizeModelYaw('90deg')).toBeNull();
+  });
+
+  test('writes model yaw while preserving existing debug window bounds', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'desktop-pet-settings-'));
+    const settingsPath = join(directory, 'settings.json');
+
+    try {
+      writeFileSync(
+        settingsPath,
+        `${JSON.stringify({ debugWindowBounds: { x: 1, y: 2, width: 300, height: 400 } })}\n`,
+        'utf8'
+      );
+      writeModelYaw(settingsPath, Math.PI / 2);
+
+      expect(readModelYaw(settingsPath)).toBeCloseTo(Math.PI / 2);
+
+      const raw = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
+        debugWindowBounds?: unknown;
+        modelYawRadians?: unknown;
+      };
+      expect(raw.debugWindowBounds).toEqual({ x: 1, y: 2, width: 300, height: 400 });
+      expect(raw.modelYawRadians).toBeCloseTo(Math.PI / 2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

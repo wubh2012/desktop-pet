@@ -45,7 +45,7 @@ export interface PetControllerOptions {
 const CLICK_DURATION_SECONDS = 0.55;
 const JUMP_DURATION_SECONDS = 0.58;
 const SPIN_DURATION_SECONDS = 0.9;
-const IDLE_FLOAT_AMPLITUDE = 0.035;
+const IDLE_FLOAT_AMPLITUDE = 0.012;
 const WALK_BOB_AMPLITUDE = 0.045;
 const LOOK_AT_MOUSE_YAW = 0.24;
 

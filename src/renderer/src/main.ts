@@ -24,7 +24,9 @@ import {
   type PetOneShotAction
 } from '../../shared/petActionMode';
 import { buildRendererAssetUrl } from './pet/assetUrl';
+import { showModelLoadFailure, showModelLoadSuccess } from './pet/loadStatus';
 import { calculateModelLayout } from './pet/modelLayout';
+import { hasDebugModelYawOverride, resolveModelYaw } from './pet/modelOrientation';
 import { repairMissingMaterials } from './pet/materialRepair';
 import { PetController, type PetTransform } from './pet/PetController';
 import { detectModelCapabilities } from './pet/modelCapabilities';
@@ -36,6 +38,7 @@ declare global {
       onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
       onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+      onModelYawChanged(callback: (yawRadians: number) => void): () => void;
       openPetActionMenu(): Promise<void>;
     };
   }
@@ -77,6 +80,7 @@ let petRoot: THREE.Object3D | null = null;
 let normalizedModel: THREE.Object3D | null = null;
 let lookAtMouseEnabled = false;
 let pointerLookX = 0;
+let modelYawRadians = resolveModelYaw(window.location.search, import.meta.env.DEV);
 
 setupLights(scene);
 resizeRenderer();
@@ -99,6 +103,11 @@ window.desktopPet?.onLookAtMouseChanged((enabled) => {
 
   if (!enabled) {
     pointerLookX = 0;
+  }
+});
+window.desktopPet?.onModelYawChanged((yawRadians) => {
+  if (!hasDebugModelYawOverride(window.location.search, import.meta.env.DEV)) {
+    applyModelYaw(yawRadians);
   }
 });
 
@@ -191,11 +200,13 @@ async function loadPetModel(): Promise<void> {
     scene.add(wrapper);
 
     const capabilities = detectModelCapabilities(gltf);
-    statusElement.textContent = `GLB 已加载 | animations=${capabilities.animationNames.length} | platform=${window.desktopPet?.platform ?? 'browser'}`;
+    showModelLoadSuccess(statusElement, {
+      animationCount: capabilities.animationNames.length,
+      platform: window.desktopPet?.platform ?? 'browser'
+    });
   } catch (error) {
     console.error('Failed to load local pet model.', error);
-    statusElement.textContent = '模型加载失败';
-    statusElement.hidden = false;
+    showModelLoadFailure(statusElement);
   }
 }
 
@@ -226,10 +237,31 @@ function normalizeModel(gltf: GLTF): THREE.Object3D {
 
   model.position.set(layout.position.x, layout.position.y, layout.position.z);
   model.scale.setScalar(layout.scale);
-  model.rotation.y = Math.PI;
+  model.rotation.y = modelYawRadians;
   wrapper.add(model);
 
   return wrapper;
+}
+
+/**
+ * Applies a persisted or menu-selected base yaw to the loaded GLB scene.
+ *
+ * Inputs: `yawRadians` is a finite Y-axis rotation in radians.
+ * Returns: nothing.
+ * Errors: invalid yaw values are ignored.
+ * Side effects: updates in-memory renderer orientation state and mutates the
+ * loaded model scene if it has already been attached.
+ */
+function applyModelYaw(yawRadians: number): void {
+  if (!Number.isFinite(yawRadians)) {
+    return;
+  }
+
+  modelYawRadians = yawRadians;
+
+  if (normalizedModel) {
+    normalizedModel.rotation.y = yawRadians;
+  }
 }
 
 /**

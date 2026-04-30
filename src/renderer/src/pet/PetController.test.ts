@@ -44,6 +44,20 @@ describe('PetController', () => {
     expect(later.position.x).toBe(0);
   });
 
+  test('keeps idle vertical float subtle so the pet feels grounded', () => {
+    const controller = new PetController();
+    const samples = [];
+
+    for (let frame = 0; frame < 180; frame += 1) {
+      samples.push(controller.update(1 / 60).position.y);
+    }
+
+    const lowest = Math.min(...samples);
+    const highest = Math.max(...samples);
+
+    expect(highest - lowest).toBeLessThanOrEqual(0.025);
+  });
+
   test('returns to the previous mode after a click reaction finishes', () => {
     const controller = new PetController();
 
