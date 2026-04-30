@@ -11,7 +11,16 @@
  * context isolation enabled for the renderer, and should avoid exposing Node.js
  * APIs directly to web content.
  */
-import { app, BrowserWindow, Menu, nativeImage, Tray, type NativeImage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Tray,
+  type IpcMainInvokeEvent,
+  type NativeImage
+} from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +31,12 @@ import {
   type WindowBounds
 } from './windowSettings.js';
 import { resolveWindowMode } from './windowMode.js';
+import {
+  buildPetActionMenuTemplate,
+  type PetActionMenuHandlers,
+  type PetActionMenuState
+} from './petActionMenu.js';
+import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMode.js';
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -29,6 +44,8 @@ const currentDirectory = dirname(currentFile);
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let debugWindowMode = false;
+let currentActionMode: PetActionMode = 'idle';
+let lookAtMouseEnabled = false;
 let isQuitting = false;
 let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
 
@@ -96,6 +113,8 @@ function createMainWindow(): BrowserWindow {
 
   window.once('ready-to-show', () => {
     window.show();
+    sendActionModeToRenderer(window);
+    sendLookAtMouseToRenderer(window);
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -216,6 +235,10 @@ function buildTrayMenu(): Menu {
         setDebugWindowMode(!debugWindowMode);
       }
     },
+    {
+      label: '动作',
+      submenu: buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
+    },
     { type: 'separator' },
     {
       label: '退出',
@@ -260,6 +283,163 @@ function refreshTrayMenu(): void {
 }
 
 /**
+ * Reads the current action menu state for tray and pet context menus.
+ *
+ * Inputs: none; reads in-memory main-process state.
+ * Returns: the current radio and checkbox state for menu rendering.
+ * Errors: does not throw.
+ * Side effects: none.
+ */
+function getPetActionMenuState(): PetActionMenuState {
+  return {
+    currentActionMode,
+    lookAtMouseEnabled
+  };
+}
+
+/**
+ * Creates action menu handlers bound to this process state.
+ *
+ * Inputs: none; captures local state mutator functions.
+ * Returns: callbacks used by Electron menu item click handlers.
+ * Errors: callbacks do not throw for validated menu values.
+ * Side effects: returned callbacks may update state, refresh tray menus, and
+ * send IPC to the renderer when the user selects a menu item.
+ */
+function getPetActionMenuHandlers(): PetActionMenuHandlers {
+  return {
+    setActionMode,
+    triggerOneShotAction,
+    setLookAtMouseEnabled
+  };
+}
+
+/**
+ * Builds a native Electron menu for direct pet action control.
+ *
+ * Inputs: none; reads current action state.
+ * Returns: a native `Menu` containing only pet action items.
+ * Errors: Electron may throw if template construction fails.
+ * Side effects: none until the returned menu is shown and clicked.
+ */
+function buildPetActionMenu(): Menu {
+  return Menu.buildFromTemplate(
+    buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
+  );
+}
+
+/**
+ * Opens the pet action context menu for a renderer-owned window.
+ *
+ * Inputs: `window` is the BrowserWindow that requested the menu.
+ * Returns: nothing.
+ * Errors: does not throw for destroyed windows.
+ * Side effects: shows a native context menu owned by Electron.
+ */
+function popupPetActionMenu(window: BrowserWindow): void {
+  if (window.isDestroyed()) {
+    return;
+  }
+
+  buildPetActionMenu().popup({ window });
+}
+
+/**
+ * Handles renderer requests to open the native pet action menu.
+ *
+ * Inputs: Electron invoke event whose sender is expected to be the pet window.
+ * Returns: nothing.
+ * Errors: does not throw when the sender has no BrowserWindow.
+ * Side effects: may show the native context menu.
+ */
+function handleOpenPetActionMenu(event: IpcMainInvokeEvent): void {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+
+  if (sourceWindow) {
+    popupPetActionMenu(sourceWindow);
+  }
+}
+
+/**
+ * Sets the current tray-selected pet action mode.
+ *
+ * Inputs: `mode` is the validated user-selected action mode.
+ * Returns: nothing.
+ * Errors: does not throw.
+ * Side effects: updates in-memory state, sends IPC to the renderer, and
+ * refreshes tray radio state.
+ */
+function setActionMode(mode: PetActionMode): void {
+  currentActionMode = mode;
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sendActionModeToRenderer(mainWindow);
+  }
+
+  refreshTrayMenu();
+}
+
+/**
+ * Triggers a one-shot action in the renderer.
+ *
+ * Inputs: `action` is `jump` or `spin`.
+ * Returns: nothing.
+ * Errors: does not throw.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function triggerOneShotAction(action: PetOneShotAction): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pet-one-shot-action', action);
+  }
+}
+
+/**
+ * Sets whether renderer should steer the pet toward the mouse pointer.
+ *
+ * Inputs: boolean enabled state.
+ * Returns: nothing.
+ * Errors: does not throw.
+ * Side effects: updates menu state, sends IPC to renderer, and refreshes tray.
+ */
+function setLookAtMouseEnabled(enabled: boolean): void {
+  lookAtMouseEnabled = enabled;
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sendLookAtMouseToRenderer(mainWindow);
+  }
+
+  refreshTrayMenu();
+}
+
+/**
+ * Sends the current pet action mode to a renderer window.
+ *
+ * Inputs: target `BrowserWindow`.
+ * Returns: nothing.
+ * Errors: does not throw for destroyed windows.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function sendActionModeToRenderer(window: BrowserWindow): void {
+  if (!window.isDestroyed()) {
+    window.webContents.send('pet-action-mode-changed', currentActionMode);
+  }
+}
+
+/**
+ * Sends current look-at-mouse state to a renderer window.
+ *
+ * Inputs: target `BrowserWindow`.
+ * Returns: nothing.
+ * Errors: does not throw for destroyed windows.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function sendLookAtMouseToRenderer(window: BrowserWindow): void {
+  if (!window.isDestroyed()) {
+    window.webContents.send('pet-look-at-mouse-changed', lookAtMouseEnabled);
+  }
+}
+
+/**
  * Toggles debug window mode by recreating the BrowserWindow.
  *
  * Inputs: `enabled` true creates a framed, resizable debug window; false
@@ -292,6 +472,8 @@ function setDebugWindowMode(enabled: boolean): void {
 
 app.whenReady().then(() => {
   app.setName('Desktop Pet');
+  ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
+
   mainWindow = createMainWindow();
   initializeTray();
 

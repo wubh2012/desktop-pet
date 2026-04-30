@@ -9,14 +9,119 @@
  * Key dependencies and constraints: must run with `contextIsolation` enabled
  * and should only expose serializable, non-sensitive data.
  */
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
+import {
+  isPetActionMode,
+  isPetOneShotAction,
+  type PetActionMode,
+  type PetOneShotAction
+} from '../shared/petActionMode.js';
+
+/**
+ * Safe renderer-facing API exposed through Electron context isolation.
+ *
+ * Inputs: renderer code calls the methods with callbacks or no arguments.
+ * Returns: platform metadata, unsubscribe functions, or promises for main
+ * process commands.
+ * Errors: invalid IPC payloads are ignored by listener methods; command
+ * promises reject only if Electron IPC invocation fails.
+ * Side effects: methods register IPC listeners or ask the main process to show
+ * native UI.
+ */
 export interface DesktopPetApi {
   readonly platform: NodeJS.Platform;
+  /** Subscribes to persistent action mode changes and returns an unsubscribe callback. */
+  onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
+  /** Subscribes to one-shot action requests and returns an unsubscribe callback. */
+  onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
+  /** Subscribes to look-at-mouse toggle changes and returns an unsubscribe callback. */
+  onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+  /** Requests that the main process open the native pet action context menu. */
+  openPetActionMenu(): Promise<void>;
 }
 
 const api: DesktopPetApi = {
-  platform: process.platform
+  platform: process.platform,
+
+  /**
+   * Subscribes to tray-selected pet action changes.
+   *
+   * Inputs: `callback` receives only validated `idle` or `walk` modes.
+   * Returns: an unsubscribe function for removing the IPC listener.
+   * Errors: invalid IPC payloads are ignored.
+   * Side effects: registers an Electron IPC listener until unsubscribed.
+   */
+  onActionModeChanged(callback: (mode: PetActionMode) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isPetActionMode(value)) {
+        callback(value);
+      }
+    };
+
+    ipcRenderer.on('pet-action-mode-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-action-mode-changed', listener);
+    };
+  },
+
+  /**
+   * Subscribes to tray-triggered one-shot pet actions.
+   *
+   * Inputs: `callback` receives only validated `jump` or `spin` actions.
+   * Returns: an unsubscribe function for removing the IPC listener.
+   * Errors: invalid IPC payloads are ignored.
+   * Side effects: registers an Electron IPC listener until unsubscribed.
+   */
+  onOneShotAction(callback: (action: PetOneShotAction) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isPetOneShotAction(value)) {
+        callback(value);
+      }
+    };
+
+    ipcRenderer.on('pet-one-shot-action', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-one-shot-action', listener);
+    };
+  },
+
+  /**
+   * Subscribes to the tray look-at-mouse toggle.
+   *
+   * Inputs: `callback` receives a boolean enabled state.
+   * Returns: an unsubscribe function for removing the IPC listener.
+   * Errors: invalid IPC payloads are ignored.
+   * Side effects: registers an Electron IPC listener until unsubscribed.
+   */
+  onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (typeof value === 'boolean') {
+        callback(value);
+      }
+    };
+
+    ipcRenderer.on('pet-look-at-mouse-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-look-at-mouse-changed', listener);
+    };
+  },
+
+  /**
+   * Opens the native pet action context menu owned by the main process.
+   *
+   * Inputs: none.
+   * Returns: a promise that resolves after the main process handles the request.
+   * Errors: rejects if the IPC channel is unavailable or the main handler
+   * throws.
+   * Side effects: may display a native context menu over the pet window.
+   */
+  async openPetActionMenu(): Promise<void> {
+    await ipcRenderer.invoke('open-pet-action-menu');
+  }
 };
 
 contextBridge.exposeInMainWorld('desktopPet', api);

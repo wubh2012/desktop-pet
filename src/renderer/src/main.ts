@@ -17,8 +17,15 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import './styles.css';
+import {
+  isPetActionMode,
+  isPetOneShotAction,
+  type PetActionMode,
+  type PetOneShotAction
+} from '../../shared/petActionMode';
 import { buildRendererAssetUrl } from './pet/assetUrl';
 import { calculateModelLayout } from './pet/modelLayout';
+import { repairMissingMaterials } from './pet/materialRepair';
 import { PetController, type PetTransform } from './pet/PetController';
 import { detectModelCapabilities } from './pet/modelCapabilities';
 
@@ -26,6 +33,10 @@ declare global {
   interface Window {
     readonly desktopPet?: {
       readonly platform: string;
+      onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
+      onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
+      onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+      openPetActionMenu(): Promise<void>;
     };
   }
 }
@@ -64,11 +75,32 @@ const pointer = new THREE.Vector2();
 
 let petRoot: THREE.Object3D | null = null;
 let normalizedModel: THREE.Object3D | null = null;
+let lookAtMouseEnabled = false;
+let pointerLookX = 0;
 
 setupLights(scene);
 resizeRenderer();
 window.addEventListener('resize', resizeRenderer);
 renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+renderer.domElement.addEventListener('pointermove', handlePointerMove);
+renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+window.desktopPet?.onActionModeChanged((mode) => {
+  if (isPetActionMode(mode)) {
+    petController.setMode(mode);
+  }
+});
+window.desktopPet?.onOneShotAction((action) => {
+  if (isPetOneShotAction(action)) {
+    petController.triggerOneShot(action);
+  }
+});
+window.desktopPet?.onLookAtMouseChanged((enabled) => {
+  lookAtMouseEnabled = enabled;
+
+  if (!enabled) {
+    pointerLookX = 0;
+  }
+});
 
 void loadPetModel();
 requestAnimationFrame(animate);
@@ -151,12 +183,12 @@ function setupLights(targetScene: THREE.Scene): void {
 async function loadPetModel(): Promise<void> {
   try {
     const gltf = await loader.loadAsync(MODEL_URL);
+    await repairMissingMaterials(gltf);
     const wrapper = normalizeModel(gltf);
 
     petRoot = wrapper;
     normalizedModel = gltf.scene;
     scene.add(wrapper);
-    petController.setMode('walk');
 
     const capabilities = detectModelCapabilities(gltf);
     statusElement.textContent = `GLB 已加载 | animations=${capabilities.animationNames.length} | platform=${window.desktopPet?.platform ?? 'browser'}`;
@@ -214,7 +246,10 @@ function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
 
   if (petRoot) {
-    applyTransform(petRoot, petController.update(delta));
+    applyTransform(
+      petRoot,
+      petController.update(delta, { lookAtX: lookAtMouseEnabled ? pointerLookX : 0 })
+    );
   }
 
   renderer.render(scene, camera);
@@ -245,19 +280,70 @@ function applyTransform(target: THREE.Object3D, transform: PetTransform): void {
  * Side effects: may trigger the pet controller's click reaction.
  */
 function handlePointerDown(event: PointerEvent): void {
+  if (isPointerOverPet(event)) {
+    petController.click();
+  }
+}
+
+/**
+ * Handles right-click context menu requests on the WebGL canvas.
+ *
+ * Inputs: browser mouse event in client coordinates.
+ * Returns: nothing.
+ * Errors: IPC failures are intentionally not thrown into the event loop.
+ * Side effects: suppresses the browser context menu and may ask Electron main
+ * process to show the native pet action menu when the model is hit.
+ */
+function handleContextMenu(event: MouseEvent): void {
+  event.preventDefault();
+
+  if (isPointerOverPet(event)) {
+    void window.desktopPet?.openPetActionMenu();
+  }
+}
+
+/**
+ * Checks whether a pointer-like event intersects the loaded pet model.
+ *
+ * Inputs: event with client coordinates relative to the browser viewport.
+ * Returns: true when raycasting hits the current pet wrapper or descendants.
+ * Errors: does not throw; missing model or zero-sized canvas returns false.
+ * Side effects: updates reusable raycaster and pointer vectors.
+ */
+function isPointerOverPet(event: MouseEvent | PointerEvent): boolean {
   if (!normalizedModel || !petRoot) {
-    return;
+    return false;
   }
 
   const rect = renderer.domElement.getBoundingClientRect();
+
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false;
+  }
+
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
 
   raycaster.setFromCamera(pointer, camera);
 
-  if (raycaster.intersectObject(petRoot, true).length > 0) {
-    petController.click();
+  return raycaster.intersectObject(petRoot, true).length > 0;
+}
+
+/**
+ * Tracks mouse horizontal offset for look-at-mouse mode.
+ *
+ * Inputs: browser pointer event in client coordinates.
+ * Returns: nothing.
+ * Errors: does not throw.
+ * Side effects: updates the normalized pointer yaw input used during animation.
+ */
+function handlePointerMove(event: PointerEvent): void {
+  if (!lookAtMouseEnabled) {
+    return;
   }
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerLookX = THREE.MathUtils.clamp(((event.clientX - rect.left) / rect.width) * 2 - 1, -1, 1);
 }
 
 /**

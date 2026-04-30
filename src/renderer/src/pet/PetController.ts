@@ -16,7 +16,13 @@
 
 export type PetMode = 'idle' | 'walk';
 
-export type PetState = PetMode | 'clicked';
+export type PetOneShotAction = 'jump' | 'spin';
+
+export type PetState = PetMode | PetOneShotAction | 'clicked';
+
+export interface PetUpdateInput {
+  readonly lookAtX?: number;
+}
 
 export interface PetVector3 {
   readonly x: number;
@@ -37,8 +43,11 @@ export interface PetControllerOptions {
 }
 
 const CLICK_DURATION_SECONDS = 0.55;
+const JUMP_DURATION_SECONDS = 0.58;
+const SPIN_DURATION_SECONDS = 0.9;
 const IDLE_FLOAT_AMPLITUDE = 0.035;
 const WALK_BOB_AMPLITUDE = 0.045;
+const LOOK_AT_MOUSE_YAW = 0.24;
 
 /**
  * Produces deterministic procedural transforms for a static pet model.
@@ -100,11 +109,29 @@ export class PetController {
    * enough update time has elapsed.
    */
   public click(): void {
-    if (this.mode !== 'clicked') {
+    if (isPersistentMode(this.mode)) {
       this.previousMode = this.mode;
     }
 
     this.mode = 'clicked';
+    this.clickElapsedSeconds = 0;
+  }
+
+  /**
+   * Starts a user-triggered one-shot procedural action.
+   *
+   * Inputs: `action` is `jump` or `spin`.
+   * Returns: nothing.
+   * Errors: TypeScript constrains valid actions; no runtime exception is thrown.
+   * Side effects: stores the current persistent mode and enters the transient
+   * action until enough update time has elapsed.
+   */
+  public triggerOneShot(action: PetOneShotAction): void {
+    if (isPersistentMode(this.mode)) {
+      this.previousMode = this.mode;
+    }
+
+    this.mode = action;
     this.clickElapsedSeconds = 0;
   }
 
@@ -119,15 +146,15 @@ export class PetController {
    * Side effects: mutates elapsed time, walk position, and transient click
    * timers held by this controller instance.
    */
-  public update(deltaSeconds: number): PetTransform {
+  public update(deltaSeconds: number, input: PetUpdateInput = {}): PetTransform {
     const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
 
     this.elapsedSeconds += delta;
 
-    if (this.mode === 'clicked') {
+    if (this.mode === 'clicked' || this.mode === 'jump' || this.mode === 'spin') {
       this.clickElapsedSeconds += delta;
 
-      if (this.clickElapsedSeconds >= CLICK_DURATION_SECONDS) {
+      if (this.clickElapsedSeconds >= this.getTransientDuration()) {
         this.mode = this.previousMode;
         this.clickElapsedSeconds = 0;
       }
@@ -137,7 +164,7 @@ export class PetController {
       this.advanceWalk(delta);
     }
 
-    return this.createTransform();
+    return this.createTransform(input);
   }
 
   /**
@@ -168,7 +195,9 @@ export class PetController {
    * Errors: does not throw.
    * Side effects: none.
    */
-  private createTransform(): PetTransform {
+  private createTransform(input: PetUpdateInput = {}): PetTransform {
+    const lookYaw = clamp(input.lookAtX ?? 0, -1, 1) * LOOK_AT_MOUSE_YAW;
+
     if (this.mode === 'clicked') {
       const progress = Math.min(this.clickElapsedSeconds / CLICK_DURATION_SECONDS, 1);
       const bounce = Math.sin(progress * Math.PI);
@@ -178,8 +207,32 @@ export class PetController {
       return {
         state: 'clicked',
         position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE + bounce * 0.16, 0),
-        rotation: vector(0, twist, Math.sin(this.elapsedSeconds * 8) * 0.07),
+        rotation: vector(0, lookYaw + twist, Math.sin(this.elapsedSeconds * 8) * 0.07),
         scale: vector(scale, scale, scale)
+      };
+    }
+
+    if (this.mode === 'jump') {
+      const progress = Math.min(this.clickElapsedSeconds / JUMP_DURATION_SECONDS, 1);
+      const bounce = Math.sin(progress * Math.PI);
+      const scale = 1 + bounce * 0.12;
+
+      return {
+        state: 'jump',
+        position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE + bounce * 0.24, 0),
+        rotation: vector(0, lookYaw, Math.sin(progress * Math.PI * 2) * 0.04),
+        scale: vector(scale, scale, scale)
+      };
+    }
+
+    if (this.mode === 'spin') {
+      const progress = Math.min(this.clickElapsedSeconds / SPIN_DURATION_SECONDS, 1);
+
+      return {
+        state: 'spin',
+        position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE, 0),
+        rotation: vector(0, progress * Math.PI * 2, 0),
+        scale: vector(1, 1, 1)
       };
     }
 
@@ -190,7 +243,7 @@ export class PetController {
       return {
         state: 'walk',
         position: vector(this.xPosition, Math.abs(stride) * WALK_BOB_AMPLITUDE, 0),
-        rotation: vector(0, lean, stride * 0.08),
+        rotation: vector(0, lookYaw + lean, stride * 0.08),
         scale: vector(1, 1, 1)
       };
     }
@@ -200,9 +253,29 @@ export class PetController {
     return {
       state: 'idle',
       position: vector(this.xPosition, IDLE_FLOAT_AMPLITUDE + float * IDLE_FLOAT_AMPLITUDE, 0),
-      rotation: vector(0, Math.sin(this.elapsedSeconds * 1.3) * 0.08, float * 0.035),
+      rotation: vector(0, lookYaw + Math.sin(this.elapsedSeconds * 1.3) * 0.08, float * 0.035),
       scale: vector(1, 1, 1)
     };
+  }
+
+  /**
+   * Returns the configured duration for the current transient action.
+   *
+   * Inputs: none; reads current mode.
+   * Returns: duration in seconds.
+   * Errors: does not throw.
+   * Side effects: none.
+   */
+  private getTransientDuration(): number {
+    if (this.mode === 'jump') {
+      return JUMP_DURATION_SECONDS;
+    }
+
+    if (this.mode === 'spin') {
+      return SPIN_DURATION_SECONDS;
+    }
+
+    return CLICK_DURATION_SECONDS;
   }
 }
 
@@ -230,4 +303,32 @@ function vector(x: number, y: number, z: number): PetVector3 {
  */
 function positiveOrDefault(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Checks whether a state can be stored as the mode restored after a transient.
+ *
+ * Inputs: current pet state.
+ * Returns: true for persistent `idle` and `walk` modes only.
+ * Errors: does not throw.
+ * Side effects: none.
+ */
+function isPersistentMode(state: PetState): state is PetMode {
+  return state === 'idle' || state === 'walk';
+}
+
+/**
+ * Clamps a numeric value into a closed range.
+ *
+ * Inputs: number plus inclusive min/max bounds.
+ * Returns: `value` constrained to `[min, max]`.
+ * Errors: does not throw.
+ * Side effects: none.
+ */
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(value, min), max);
 }

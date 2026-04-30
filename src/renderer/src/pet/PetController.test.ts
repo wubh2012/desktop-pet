@@ -32,6 +32,18 @@ describe('PetController', () => {
     }
   });
 
+  test('starts in idle mode without horizontal walking', () => {
+    const controller = new PetController();
+
+    const first = controller.update(0);
+    const later = controller.update(1);
+
+    expect(first.state).toBe('idle');
+    expect(later.state).toBe('idle');
+    expect(first.position.x).toBe(0);
+    expect(later.position.x).toBe(0);
+  });
+
   test('returns to the previous mode after a click reaction finishes', () => {
     const controller = new PetController();
 
@@ -46,6 +58,46 @@ describe('PetController', () => {
     const afterClick = controller.update(0.1);
 
     expect(afterClick.state).toBe('walk');
+  });
+
+  test('plays a one-shot jump and returns to the previous mode', () => {
+    const controller = new PetController();
+
+    controller.setMode('walk');
+    controller.triggerOneShot('jump');
+
+    const duringJump = controller.update(0.16);
+    expect(duringJump.state).toBe('jump');
+    expect(duringJump.position.y).toBeGreaterThan(0.1);
+    expect(duringJump.scale.x).toBeGreaterThan(1);
+
+    controller.update(0.6);
+    const afterJump = controller.update(0.1);
+    expect(afterJump.state).toBe('walk');
+  });
+
+  test('plays a one-shot spin and returns to idle', () => {
+    const controller = new PetController();
+
+    controller.triggerOneShot('spin');
+
+    const duringSpin = controller.update(0.25);
+    expect(duringSpin.state).toBe('spin');
+    expect(duringSpin.rotation.y).toBeGreaterThan(1);
+
+    controller.update(1);
+    const afterSpin = controller.update(0.1);
+    expect(afterSpin.state).toBe('idle');
+  });
+
+  test('leans toward the mouse while idling', () => {
+    const controller = new PetController();
+
+    const left = controller.update(0.1, { lookAtX: -1 });
+    const right = controller.update(0.1, { lookAtX: 1 });
+
+    expect(left.rotation.y).toBeLessThan(0);
+    expect(right.rotation.y).toBeGreaterThan(0);
   });
 
   test('keeps walking inside the configured horizontal range', () => {
