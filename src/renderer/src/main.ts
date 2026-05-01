@@ -23,6 +23,12 @@ import {
   type PetActionMode,
   type PetOneShotAction
 } from '../../shared/petActionMode';
+import type { PetMessageCommand } from '../../shared/petCommand';
+import {
+  DEFAULT_REMINDER_SETTINGS,
+  normalizeReminderSettings,
+  type ReminderSettings
+} from '../../shared/petReminderSettings';
 import { buildRendererAssetUrl } from './pet/assetUrl';
 import { createDragHandles } from './pet/dragHandles';
 import { showModelLoadFailure, showModelLoadSuccess } from './pet/loadStatus';
@@ -31,6 +37,11 @@ import { hasDebugModelYawOverride, resolveModelYaw } from './pet/modelOrientatio
 import { repairMissingMaterials } from './pet/materialRepair';
 import { PetController, type PetTransform } from './pet/PetController';
 import { detectModelCapabilities } from './pet/modelCapabilities';
+import {
+  createInitialReminderState,
+  getDueReminder,
+  type PetReminderState
+} from './pet/reminders';
 import { Live2DPetRenderer } from './live2d/Live2DPetRenderer';
 
 declare global {
@@ -41,23 +52,64 @@ declare global {
       onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
+      onPetMessage(callback: (message: PetMessageCommand) => void): () => void;
+      showPetMessage(message: PetMessageCommand): Promise<void>;
+      getReminderSettings(): Promise<ReminderSettings>;
       openPetActionMenu(): Promise<void>;
     };
   }
 }
 
 const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'assets/pet.glb');
-const rendererMode = resolveRendererMode(window.location.search);
+const rendererMode = new URLSearchParams(window.location.search).get('renderer') === 'three' ? 'three' : 'live2d';
+const rendererView = new URLSearchParams(window.location.search).get('view') === 'bubble' ? 'bubble' : 'pet';
 const root = document.querySelector<HTMLDivElement>('#app');
 
 if (!root) {
   throw new Error('Renderer root #app was not found.');
 }
 
-const statusElement = createStatusElement();
-const canvasHost = createCanvasHost();
-const dragHandles = createDragHandles();
-root.append(canvasHost, ...dragHandles, statusElement);
+function createBubbleElement(): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = 'pet-bubble';
+  element.setAttribute('aria-live', 'polite');
+  element.hidden = true;
+  return element;
+}
+
+function showBubble(element: HTMLDivElement, text: string, durationMs: number): void {
+  const message = text.trim();
+
+  if (!message) {
+    return;
+  }
+
+  element.textContent = message;
+  element.hidden = false;
+  element.classList.add('pet-bubble--visible');
+  window.setTimeout(() => {
+    element.classList.remove('pet-bubble--visible');
+  }, durationMs);
+}
+
+if (rendererView === 'bubble') {
+  document.body.classList.add('bubble-view');
+  const petBubbleElement = createBubbleElement();
+  root.append(petBubbleElement);
+
+  window.desktopPet?.onPetMessage((message) => {
+    const durationMs = (message.durationSeconds ?? DEFAULT_REMINDER_SETTINGS.bubbleDurationSeconds) * 1000;
+    showBubble(petBubbleElement, message.text, durationMs);
+  });
+} else {
+  initializePetView(root);
+}
+
+function initializePetView(root: HTMLDivElement): void {
+  const statusElement = createStatusElement();
+  const canvasHost = createCanvasHost();
+  const dragHandles = createDragHandles();
+  root.append(canvasHost, ...dragHandles, statusElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -98,6 +150,7 @@ let normalizedModel: THREE.Object3D | null = null;
 let lookAtMouseEnabled = false;
 let pointerLookX = 0;
 let modelYawRadians = resolveModelYaw(window.location.search, import.meta.env.DEV);
+let reminderState: PetReminderState = createInitialReminderState(Date.now());
 
 setupLights(scene);
 resizeRenderer();
@@ -116,11 +169,7 @@ window.desktopPet?.onActionModeChanged((mode) => {
 });
 window.desktopPet?.onOneShotAction((action) => {
   if (isPetOneShotAction(action)) {
-    if (live2dPetRenderer) {
-      live2dPetRenderer.triggerOneShot(action);
-    } else {
-      petController.triggerOneShot(action);
-    }
+    triggerRendererOneShot(action);
   }
 });
 window.desktopPet?.onLookAtMouseChanged((enabled) => {
@@ -136,6 +185,7 @@ window.desktopPet?.onModelYawChanged((yawRadians) => {
     applyModelYaw(yawRadians);
   }
 });
+void startPetReminders();
 
 if (live2dPetRenderer) {
   void live2dPetRenderer.initialize();
@@ -152,10 +202,6 @@ if (live2dPetRenderer) {
  * Errors: does not throw for malformed query strings.
  * Side effects: none.
  */
-function resolveRendererMode(search: string): 'live2d' | 'three' {
-  return new URLSearchParams(search).get('renderer') === 'three' ? 'three' : 'live2d';
-}
-
 /**
  * Creates the transparent canvas host element.
  *
@@ -184,6 +230,69 @@ function createStatusElement(): HTMLDivElement {
   element.textContent = '加载中...';
   element.hidden = !import.meta.env.DEV;
   return element;
+}
+
+function createPetBubbleElement(): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = 'pet-bubble';
+  element.setAttribute('aria-live', 'polite');
+  element.hidden = true;
+  return element;
+}
+
+function showPetBubble(petBubbleElement: HTMLDivElement, text: string, durationMs: number): void {
+  const message = text.trim();
+
+  if (!message) {
+    return;
+  }
+
+  petBubbleElement.textContent = message;
+  petBubbleElement.hidden = false;
+  petBubbleElement.classList.add('pet-bubble--visible');
+  window.setTimeout(() => {
+    petBubbleElement.classList.remove('pet-bubble--visible');
+  }, durationMs);
+}
+
+async function startPetReminders(): Promise<void> {
+  const settings = await resolveReminderSettings();
+
+  if (!settings.enabled) {
+    return;
+  }
+
+  window.setInterval(() => {
+    const decision = getDueReminder(new Date(), reminderState, settings);
+
+    if (!decision) {
+      return;
+    }
+
+    reminderState = decision.nextState;
+    void window.desktopPet?.showPetMessage({
+      type: 'message',
+      text: decision.reminder.text,
+      durationSeconds: settings.bubbleDurationSeconds
+    });
+    triggerRendererOneShot(decision.reminder.action);
+  }, 60 * 1000);
+}
+
+async function resolveReminderSettings(): Promise<ReminderSettings> {
+  try {
+    return normalizeReminderSettings(await window.desktopPet?.getReminderSettings());
+  } catch {
+    return DEFAULT_REMINDER_SETTINGS;
+  }
+}
+
+function triggerRendererOneShot(action: PetOneShotAction): void {
+  if (live2dPetRenderer) {
+    live2dPetRenderer.triggerOneShot(action);
+  } else {
+    petController.triggerOneShot(action);
+  }
 }
 
 /**
@@ -420,4 +529,5 @@ function resizeRenderer(): void {
   camera.updateProjectionMatrix();
   renderer.setSize(width, height, false);
   live2dPetRenderer?.resize();
+}
 }

@@ -17,6 +17,11 @@ import {
   type PetActionMode,
   type PetOneShotAction
 } from '../shared/petActionMode.js';
+import {
+  normalizeReminderSettings,
+  type ReminderSettings
+} from '../shared/petReminderSettings.js';
+import type { PetMessageCommand } from '../shared/petCommand.js';
 
 /**
  * Safe renderer-facing API exposed through Electron context isolation.
@@ -39,8 +44,53 @@ export interface DesktopPetApi {
   onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
   /** Subscribes to persisted model yaw changes and returns an unsubscribe callback. */
   onModelYawChanged(callback: (yawRadians: number) => void): () => void;
+  /** Subscribes to API-sent text bubble messages and returns an unsubscribe callback. */
+  onPetMessage(callback: (message: PetMessageCommand) => void): () => void;
+  /** Asks the main process to display an independent text bubble message. */
+  showPetMessage(message: PetMessageCommand): Promise<void>;
+  /** Reads validated cute reminder settings from the main process. */
+  getReminderSettings(): Promise<ReminderSettings>;
   /** Requests that the main process open the native pet action context menu. */
   openPetActionMenu(): Promise<void>;
+}
+
+function normalizePetMessage(value: unknown): PetMessageCommand | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const message = value as Record<string, unknown>;
+
+  if (typeof message.text !== 'string' || message.text.trim().length === 0) {
+    return null;
+  }
+
+  const normalized: PetMessageCommand = {
+    type: 'message',
+    text: message.text.trim()
+  };
+
+  if (message.action !== undefined) {
+    if (!isPetOneShotAction(message.action)) {
+      return null;
+    }
+
+    return withOptionalMessageDuration({ ...normalized, action: message.action }, message.durationSeconds);
+  }
+
+  return withOptionalMessageDuration(normalized, message.durationSeconds);
+}
+
+function withOptionalMessageDuration(message: PetMessageCommand, durationSeconds: unknown): PetMessageCommand | null {
+  if (durationSeconds === undefined) {
+    return message;
+  }
+
+  if (typeof durationSeconds !== 'number' || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return null;
+  }
+
+  return { ...message, durationSeconds };
 }
 
 const api: DesktopPetApi = {
@@ -132,6 +182,36 @@ const api: DesktopPetApi = {
     return () => {
       ipcRenderer.removeListener('pet-model-yaw-changed', listener);
     };
+  },
+
+  onPetMessage(callback: (message: PetMessageCommand) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      const message = normalizePetMessage(value);
+
+      if (message) {
+        callback(message);
+      }
+    };
+
+    ipcRenderer.on('pet-message', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-message', listener);
+    };
+  },
+
+  async showPetMessage(message: PetMessageCommand): Promise<void> {
+    const normalized = normalizePetMessage(message);
+
+    if (normalized) {
+      await ipcRenderer.invoke('show-pet-message', normalized);
+    }
+  },
+
+  async getReminderSettings(): Promise<ReminderSettings> {
+    const value = await ipcRenderer.invoke('get-reminder-settings');
+
+    return normalizeReminderSettings(value);
   },
 
   /**

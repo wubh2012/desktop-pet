@@ -15,9 +15,12 @@ import { describe, expect, test } from 'vitest';
 
 import {
   applySavedWindowBounds,
+  DEFAULT_REMINDER_SETTINGS,
   normalizeDebugBounds,
   normalizeModelYaw,
+  normalizeReminderSettings,
   readModelYaw,
+  readReminderSettings,
   writeModelYaw
 } from './windowSettings.js';
 
@@ -94,5 +97,61 @@ describe('windowSettings', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  test('uses default reminder settings when persisted value is missing', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'desktop-pet-settings-'));
+    const settingsPath = join(directory, 'settings.json');
+
+    try {
+      expect(readReminderSettings(settingsPath)).toEqual(DEFAULT_REMINDER_SETTINGS);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps valid reminder settings from user config', () => {
+    const settings = normalizeReminderSettings({
+      enabled: false,
+      restIntervalMinutes: 30,
+      standIntervalMinutes: 55,
+      minimumGapMinutes: 7,
+      bubbleDurationSeconds: 5,
+      lunchReminder: {
+        enabled: false,
+        start: '12:05',
+        end: '13:10'
+      }
+    });
+
+    expect(settings).toEqual({
+      enabled: false,
+      restIntervalMinutes: 30,
+      standIntervalMinutes: 55,
+      minimumGapMinutes: 7,
+      bubbleDurationSeconds: 5,
+      lunchReminder: {
+        enabled: false,
+        start: '12:05',
+        end: '13:10'
+      }
+    });
+  });
+
+  test('falls back for invalid reminder setting fields', () => {
+    expect(
+      normalizeReminderSettings({
+        enabled: 'yes',
+        restIntervalMinutes: 0,
+        standIntervalMinutes: Number.NaN,
+        minimumGapMinutes: -1,
+        bubbleDurationSeconds: 'long',
+        lunchReminder: {
+          enabled: 'no',
+          start: '24:00',
+          end: 'soon'
+        }
+      })
+    ).toEqual(DEFAULT_REMINDER_SETTINGS);
   });
 });

@@ -17,6 +17,13 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import {
+  normalizeReminderSettings,
+  type ReminderSettings
+} from '../shared/petReminderSettings.js';
+export { DEFAULT_REMINDER_SETTINGS, normalizeReminderSettings } from '../shared/petReminderSettings.js';
+export type { LunchReminderSettings, ReminderSettings } from '../shared/petReminderSettings.js';
+
 export interface WindowBounds {
   readonly x?: number;
   readonly y?: number;
@@ -42,6 +49,7 @@ export interface DebugBoundsFallback {
 interface DesktopPetSettings {
   readonly debugWindowBounds?: unknown;
   readonly modelYawRadians?: unknown;
+  readonly reminders?: unknown;
 }
 
 /**
@@ -151,6 +159,10 @@ export function readDebugWindowBounds(
  */
 export function readModelYaw(settingsPath: string): number | null {
   return normalizeModelYaw(readSettings(settingsPath).modelYawRadians);
+}
+
+export function readReminderSettings(settingsPath: string): ReminderSettings {
+  return normalizeReminderSettings(readSettings(settingsPath).reminders);
 }
 
 /**
