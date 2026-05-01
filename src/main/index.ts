@@ -28,26 +28,26 @@ import { appendFileSync } from 'node:fs';
 import {
   applySavedWindowBounds,
   readDebugWindowBounds,
+  readPetModelId,
   readModelYaw,
+  writePetModelId,
   writeModelYaw,
   writeDebugWindowBounds,
   type WindowBounds
 } from './windowSettings.js';
 import { resolveWindowMode } from './windowMode.js';
 import { createTrayImage } from './trayIcon.js';
-import { buildModelOrientationMenuTemplate } from './modelOrientationMenu.js';
 import {
   startPetCommandServer,
   type PetCommandServer
 } from './petCommandServer.js';
-import {
-  buildPetActionMenuTemplate,
-  type PetActionMenuHandlers,
-  type PetActionMenuState
-} from './petActionMenu.js';
+import { buildPetContextMenuTemplate, type PetContextMenuHandlers } from './petActionMenu.js';
+import { buildTrayMenuTemplate } from './trayMenu.js';
 import { normalizeRendererStatusLabel } from './rendererStatus.js';
+import { registerSystemContextMenuSuppression } from './systemContextMenu.js';
 import type { PetCommand } from '../shared/petCommand.js';
 import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMode.js';
+import { type PetModelId } from '../shared/petModel.js';
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -58,7 +58,8 @@ let tray: Tray | null = null;
 let petCommandServer: PetCommandServer | null = null;
 let debugWindowMode = false;
 let currentActionMode: PetActionMode = 'idle';
-let lookAtMouseEnabled = false;
+let currentPetModelId: PetModelId = 'tororo';
+let lookAtMouseEnabled = true;
 let currentModelYawRadians = 0;
 let isQuitting = false;
 let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
@@ -130,6 +131,7 @@ function createMainWindow(): BrowserWindow {
 
   window.setMenu(null);
   window.setAlwaysOnTop(true, 'screen-saver');
+  registerSystemContextMenuSuppression(window, { enabled: !mode.frame });
 
   if (process.env.DESKTOP_PET_DEBUG_RENDERER === '1') {
     window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
@@ -216,6 +218,7 @@ function showMainWindowAndSendInitialState(window: BrowserWindow): void {
   window.focus();
   writeDebugLog(`showMainWindow:after visible=${window.isVisible()} focused=${window.isFocused()} ${JSON.stringify(window.getBounds())}`);
   sendActionModeToRenderer(window);
+  sendPetModelToRenderer(window);
   sendLookAtMouseToRenderer(window);
   sendModelYawToRenderer(window);
 }
@@ -274,63 +277,72 @@ function saveDebugWindowBoundsNow(window: BrowserWindow): void {
 }
 
 /**
- * Builds the tray context menu for pet visibility and debug mode controls.
+ * Builds the tray context menu for quick daily controls and advanced settings.
  *
- * Inputs: none; reads the current debug mode and window visibility.
+ * Inputs: none; reads current window, renderer, model, action, and debug state.
  * Returns: an Electron menu instance ready for `Tray.setContextMenu`.
  * Errors: does not throw unless Electron menu construction fails.
- * Side effects: menu item click handlers may show, hide, recreate, or quit the
- * app when invoked by the user.
+ * Side effects: generated menu item click handlers may show/hide windows,
+ * update app state, send renderer IPC, or quit the app when invoked.
  */
 function buildTrayMenu(): Menu {
-  const visible = mainWindow?.isVisible() ?? false;
-  const modelOrientationTemplate = buildModelOrientationMenuTemplate(
-    { debugWindowMode, currentYawRadians: currentModelYawRadians },
-    { setModelYaw }
+  return Menu.buildFromTemplate(
+    buildTrayMenuTemplate(
+      {
+        rendererStatusLabel,
+        petVisible: mainWindow?.isVisible() ?? false,
+        currentPetModelId,
+        currentActionMode,
+        debugWindowMode,
+        currentYawRadians: currentModelYawRadians
+      },
+      {
+        togglePetVisibility,
+        setPetModel,
+        setActionMode,
+        triggerOneShotAction,
+        setDebugWindowMode,
+        setModelYaw,
+        quit: quitApp
+      }
+    )
   );
+}
 
-  return Menu.buildFromTemplate([
-    { label: rendererStatusLabel, enabled: false },
-    { type: 'separator' },
-    {
-      label: visible ? '隐藏宠物' : '显示宠物',
-      click: () => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          mainWindow = createMainWindow();
-        }
+/**
+ * Toggles the desktop-pet window from the tray menu.
+ *
+ * Inputs: none; uses the current main window reference.
+ * Returns: nothing.
+ * Errors: recreates a missing/destroyed window instead of throwing.
+ * Side effects: may create, show, hide, focus, and refresh the tray menu.
+ */
+function togglePetVisibility(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createMainWindow();
+  }
 
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+  } else {
+    mainWindow.show();
+    mainWindow.focus();
+  }
 
-        refreshTrayMenu();
-      }
-    },
-    {
-      label: '调试窗口模式',
-      type: 'checkbox',
-      checked: debugWindowMode,
-      click: () => {
-        setDebugWindowMode(!debugWindowMode);
-      }
-    },
-    ...modelOrientationTemplate,
-    {
-      label: '小猫互动',
-      submenu: buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      }
-    }
-  ]);
+  refreshTrayMenu();
+}
+
+/**
+ * Quits the app from the tray menu.
+ *
+ * Inputs: none.
+ * Returns: nothing.
+ * Errors: Electron owns quit errors; this function does not catch them.
+ * Side effects: marks intentional quit state and asks Electron to quit.
+ */
+function quitApp(): void {
+  isQuitting = true;
+  app.quit();
 }
 
 /**
@@ -372,48 +384,55 @@ function refreshTrayMenu(): void {
 }
 
 /**
- * Reads the current action menu state for tray and pet context menus.
- *
- * Inputs: none; reads in-memory main-process state.
- * Returns: the current radio and checkbox state for menu rendering.
- * Errors: does not throw.
- * Side effects: none.
- */
-function getPetActionMenuState(): PetActionMenuState {
-  return {
-    currentActionMode,
-    lookAtMouseEnabled
-  };
-}
-
-/**
- * Creates action menu handlers bound to this process state.
+ * Creates pet-body context menu handlers bound to this process state.
  *
  * Inputs: none; captures local state mutator functions.
- * Returns: callbacks used by Electron menu item click handlers.
+ * Returns: callbacks used by Electron pet context-menu click handlers.
  * Errors: callbacks do not throw for validated menu values.
- * Side effects: returned callbacks may update state, refresh tray menus, and
- * send IPC to the renderer when the user selects a menu item.
+ * Side effects: returned callbacks may send IPC to the renderer when the user
+ * selects a pet-body interaction item.
  */
-function getPetActionMenuHandlers(): PetActionMenuHandlers {
+function getPetContextMenuHandlers(): PetContextMenuHandlers {
   return {
-    setActionMode,
-    triggerOneShotAction,
-    setLookAtMouseEnabled
+    triggerOneShotAction
   };
 }
 
 /**
- * Builds a native Electron menu for direct pet action control.
+ * Sets the current tray-selected Live2D pet model.
  *
- * Inputs: none; reads current action state.
- * Returns: a native `Menu` containing only pet action items.
+ * Inputs: `modelId` is a validated bundled model id.
+ * Returns: nothing.
+ * Errors: does not throw.
+ * Side effects: updates in-memory state, persists settings, sends IPC to the
+ * renderer, and refreshes tray radio state.
+ */
+function setPetModel(modelId: PetModelId): void {
+  if (currentPetModelId === modelId) {
+    return;
+  }
+
+  currentPetModelId = modelId;
+  writePetModelId(getSettingsPath(), currentPetModelId);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sendPetModelToRenderer(mainWindow);
+  }
+
+  refreshTrayMenu();
+}
+
+/**
+ * Builds a native Electron menu for direct pet-body interaction control.
+ *
+ * Inputs: none.
+ * Returns: a native `Menu` containing only one-shot interaction items.
  * Errors: Electron may throw if template construction fails.
  * Side effects: none until the returned menu is shown and clicked.
  */
 function buildPetActionMenu(): Menu {
   return Menu.buildFromTemplate(
-    buildPetActionMenuTemplate(getPetActionMenuState(), getPetActionMenuHandlers())
+    buildPetContextMenuTemplate(getPetContextMenuHandlers())
   );
 }
 
@@ -530,7 +549,8 @@ function dispatchPetCommand(command: PetCommand): void {
  * Inputs: boolean enabled state.
  * Returns: nothing.
  * Errors: does not throw.
- * Side effects: updates menu state, sends IPC to renderer, and refreshes tray.
+ * Side effects: updates in-memory state and sends IPC to the renderer. This is
+ * kept for the local HTTP API; normal UI keeps mouse-follow enabled by default.
  */
 function setLookAtMouseEnabled(enabled: boolean): void {
   lookAtMouseEnabled = enabled;
@@ -538,8 +558,6 @@ function setLookAtMouseEnabled(enabled: boolean): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     sendLookAtMouseToRenderer(mainWindow);
   }
-
-  refreshTrayMenu();
 }
 
 /**
@@ -577,6 +595,20 @@ function setModelYaw(yawRadians: number): void {
 function sendActionModeToRenderer(window: BrowserWindow): void {
   if (!window.isDestroyed()) {
     window.webContents.send('pet-action-mode-changed', currentActionMode);
+  }
+}
+
+/**
+ * Sends the current Live2D pet model selection to a renderer window.
+ *
+ * Inputs: target `BrowserWindow`.
+ * Returns: nothing.
+ * Errors: does not throw for destroyed windows.
+ * Side effects: emits one IPC message to renderer code.
+ */
+function sendPetModelToRenderer(window: BrowserWindow): void {
+  if (!window.isDestroyed()) {
+    window.webContents.send('pet-model-changed', currentPetModelId);
   }
 }
 
@@ -665,7 +697,9 @@ app.whenReady().then(() => {
   writeDebugLog('app:ready');
   app.setName('Desktop Pet');
   currentModelYawRadians = readModelYaw(getSettingsPath()) ?? currentModelYawRadians;
+  currentPetModelId = readPetModelId(getSettingsPath());
   ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
+  ipcMain.handle('get-current-pet-model', () => currentPetModelId);
   ipcMain.on('pet-renderer-status', handleRendererStatus);
 
   mainWindow = createMainWindow();

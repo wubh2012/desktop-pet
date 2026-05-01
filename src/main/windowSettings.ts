@@ -17,6 +17,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { normalizePetModelId, type PetModelId } from '../shared/petModel.js';
+
 export interface WindowBounds {
   readonly x?: number;
   readonly y?: number;
@@ -42,6 +44,7 @@ export interface DebugBoundsFallback {
 interface DesktopPetSettings {
   readonly debugWindowBounds?: unknown;
   readonly modelYawRadians?: unknown;
+  readonly petModelId?: unknown;
 }
 
 /**
@@ -94,6 +97,18 @@ export function normalizeDebugBounds(
  */
 export function normalizeModelYaw(value: unknown): number | null {
   return isFiniteNumber(value) ? value : null;
+}
+
+/**
+ * Validates a persisted pet model selection.
+ *
+ * Inputs: `value` is untrusted parsed JSON expected to be a bundled model id.
+ * Returns: a safe model id, falling back to the default white cat when invalid.
+ * Errors: does not throw.
+ * Side effects: none.
+ */
+export function normalizePersistedPetModelId(value: unknown): PetModelId {
+  return normalizePetModelId(value);
 }
 
 /**
@@ -154,6 +169,19 @@ export function readModelYaw(settingsPath: string): number | null {
 }
 
 /**
+ * Reads persisted Live2D pet model selection from a JSON settings file.
+ *
+ * Inputs: `settingsPath` is an absolute or project-relative JSON file path.
+ * Returns: a safe bundled model id, defaulting to Tororo when the file is
+ * missing, malformed, or contains an unsupported value.
+ * Errors: filesystem and JSON parse errors are caught and treated as defaults.
+ * Side effects: reads a small local JSON file.
+ */
+export function readPetModelId(settingsPath: string): PetModelId {
+  return normalizePersistedPetModelId(readSettings(settingsPath).petModelId);
+}
+
+/**
  * Writes debug-window bounds to a JSON settings file.
  *
  * Inputs: `settingsPath` is the target JSON path; `bounds` are current Electron
@@ -191,6 +219,23 @@ export function writeModelYaw(settingsPath: string, yawRadians: number): void {
   writeSettings(settingsPath, {
     ...readSettings(settingsPath),
     modelYawRadians: normalizedYaw
+  });
+}
+
+/**
+ * Writes selected Live2D pet model to a JSON settings file.
+ *
+ * Inputs: `settingsPath` is the target JSON path; `modelId` is a bundled model
+ * identifier already selected by trusted app UI.
+ * Returns: nothing.
+ * Errors: filesystem errors are caught so persistence remains best-effort.
+ * Side effects: creates the settings directory if needed and writes one JSON
+ * file containing non-sensitive model selection state.
+ */
+export function writePetModelId(settingsPath: string, modelId: PetModelId): void {
+  writeSettings(settingsPath, {
+    ...readSettings(settingsPath),
+    petModelId: normalizePersistedPetModelId(modelId)
   });
 }
 

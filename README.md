@@ -7,13 +7,9 @@
 ## 功能
 
 - 透明、无边框、置顶桌宠窗口。
-- Live2D 白猫 Tororo：眨眼、呼吸、互动动作、看着鼠标。
-- 托盘菜单和宠物右键菜单。
-- `小猫互动` 菜单：
-  - `状态`：安静陪伴、活泼一点
-  - `互动`：逗它一下、摸摸它、轻轻碰它、小小惊讶、卖个萌
-  - `小剧场`：打个招呼、精神一下、求关注
-  - 看着鼠标
+- Live2D 白猫 Tororo / 黑猫 Hijiki：眨眼、呼吸、互动动作、默认看着鼠标。
+- 托盘菜单提供完整控制：显示/隐藏、切换模型、状态、互动、高级设置和退出。
+- 宠物本体右键菜单只保留快速互动：摸摸它、逗它一下、轻轻碰它、卖个萌、打个招呼、精神一下、小小惊讶。
 - 调试窗口模式：显示普通窗口边框，允许用户调整窗口大小。
 - 调试窗口调整后的 `x/y/width/height` 会保存，并同步到退出调试模式后的透明桌宠窗口。
 - 窗口四边有隐形拖动区，小窗口下也更容易拖动。
@@ -132,11 +128,13 @@ npm run typecheck
 ## 使用方式
 
 - 启动后默认显示 Live2D 白猫桌宠。
-- 右键点击宠物本体可以打开 `小猫互动` 菜单。
+- 右键点击宠物本体可以打开快速互动菜单。
 - 右键系统托盘图标可以打开完整菜单：
   - `显示宠物 / 隐藏宠物`
-  - `调试窗口模式`
-  - `小猫互动`
+  - `白猫 Tororo / 黑猫 Hijiki`
+  - `安静陪伴 / 活泼一点`
+  - 摸摸它、逗它一下、轻轻碰它、卖个萌、打个招呼、精神一下、小小惊讶
+  - `高级`：调试窗口模式、模型朝向调试
   - `退出`
 - 拖动窗口时优先拖窗口四边缘，避免和点击宠物互动冲突。
 - 打开 `调试窗口模式` 后，可以像普通窗口一样调整大小。
@@ -183,16 +181,15 @@ surprise   小小惊讶
 cute       卖个萌
 greet      打个招呼
 cheer      精神一下
-attention  求关注
 ```
 
-看着鼠标：
+看着鼠标默认开启；如需通过外部命令重新开启：
 
 ```json
 { "type": "lookAtMouse", "enabled": true }
 ```
 
-关闭看着鼠标：
+如需通过外部命令临时关闭：
 
 ```json
 { "type": "lookAtMouse", "enabled": false }
@@ -246,11 +243,15 @@ public/live2d/tororo/tororo.model3.json
 public/live2d/tororo/tororo.moc3
 public/live2d/tororo/tororo.2048/texture_00.png
 public/live2d/tororo/motion/*.motion3.json
+public/live2d/hijiki/hijiki.model3.json
+public/live2d/hijiki/hijiki.moc3
+public/live2d/hijiki/hijiki.2048/texture_00.png
+public/live2d/hijiki/motion/*.motion3.json
 ```
 
 Live2D 资源说明：
 
-- Tororo 白猫来自 Live2D Cubism 官方 Sample Data。
+- Tororo 白猫与 Hijiki 黑猫来自 Live2D Cubism 官方 Sample Data。
 - This content uses sample data owned and copyrighted by Live2D Inc. The sample data are utilized in accordance with terms and conditions set by Live2D Inc. This content itself is created at the author’s sole discretion.
 - 使用、发布或再分发前请阅读 Live2D 的相关条款：
   - https://www.live2d.com/en/learn/sample/model-terms/
@@ -278,7 +279,8 @@ node scripts/fix-glb-materials.mjs public/assets/pet.glb public/assets/pet.glb
 ```text
 src/main/
   index.ts              Electron 主进程、窗口、托盘和 HTTP API
-  petActionMenu.ts      小猫互动菜单模板
+  trayMenu.ts           托盘完整控制菜单模板
+  petActionMenu.ts      宠物本体快速互动菜单模板
   petCommandServer.ts   本地 HTTP 命令服务
   windowMode.ts         普通模式 / 调试模式窗口配置
   windowSettings.ts     窗口 bounds 读写与归一化

@@ -34,9 +34,5 @@ describe('resolveLive2DActionSequence', () => {
       motions: ['01', '05'],
       effect: 'hop'
     });
-    expect(resolveLive2DActionSequence('attention')).toEqual({
-      motions: ['06', '07'],
-      effect: 'wiggle'
-    });
   });
 });

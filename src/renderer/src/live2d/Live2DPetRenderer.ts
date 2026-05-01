@@ -1,17 +1,17 @@
 /**
- * PixiJS + Live2D renderer for the Tororo white-cat desktop pet.
+ * PixiJS + Live2D renderer for bundled desktop-pet Live2D models.
  *
- * Responsibility: owns Live2D canvas creation, model loading, layout, pointer
- * hit testing, and motion playback for the Tororo sample model. It does not
- * create Electron windows, start HTTP servers, or validate external commands.
+ * Responsibility: owns Live2D canvas creation, model loading/switching, layout,
+ * pointer hit testing, and motion playback. It does not create Electron
+ * windows, start HTTP servers, or validate external commands.
  *
  * Side effects: creates a PixiJS WebGL canvas, reads local Live2D assets from
- * `public/live2d/tororo/`, registers DOM pointer listeners, and starts Pixi's
- * ticker while alive.
+ * `public/live2d/`, registers DOM pointer listeners, and starts Pixi's ticker
+ * while alive.
  *
  * Key dependencies and constraints: requires `live2dcubismcore.min.js` to be
- * loaded before this module initializes the model. The motion map is specific
- * to Tororo's official sample `model3.json`.
+ * loaded before this module initializes a model. Tororo and Hijiki share the
+ * same official sample motion group structure.
  */
 import { ShaderSystem } from '@pixi/core';
 import { install as installPixiUnsafeEval } from '@pixi/unsafe-eval';
@@ -22,16 +22,15 @@ import type {
 } from 'pixi-live2d-display/cubism4';
 
 import type { PetActionMode, PetOneShotAction } from '../../../shared/petActionMode';
-import { buildRendererAssetUrl } from '../pet/assetUrl';
+import type { PetModelId } from '../../../shared/petModel';
 import {
   resolveLive2DActionSequence,
   type Live2DProceduralEffect
 } from './live2dActionSequence';
 import { calculateLive2DLayout } from './live2dLayout';
+import { buildLive2DModelUrl, getLive2DModelDefinition } from './live2dModelCatalog';
 import { resolveLive2DMotion } from './live2dMotionMap';
 import { resolveLive2DViewportSize } from './live2dViewport';
-
-const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'live2d/tororo/tororo.model3.json');
 
 installPixiUnsafeEval({ ShaderSystem });
 
@@ -47,32 +46,50 @@ installPixiUnsafeEval({ ShaderSystem });
 export interface Live2DPetRendererOptions {
   readonly host: HTMLElement;
   readonly statusElement: HTMLElement;
+  readonly initialModelId: PetModelId;
   readonly openActionMenu: () => Promise<void> | void;
 }
 
+/**
+ * Coordinates one PixiJS application and the active Live2D desktop-pet model.
+ *
+ * Inputs: constructed with DOM nodes and a validated initial model id.
+ * Returns: methods mutate the renderer in place rather than returning model
+ * handles.
+ * Errors: WebGL creation and asset loader failures are surfaced through status
+ * text or console diagnostics instead of escaping normal renderer calls.
+ * Side effects: owns a canvas, model assets, pointer listeners, animation
+ * frames, and the global Pixi object required by pixi-live2d-display.
+ */
 export class Live2DPetRenderer {
   private readonly host: HTMLElement;
   private readonly statusElement: HTMLElement;
   private readonly openActionMenu: () => Promise<void> | void;
   private readonly app: PIXI.Application;
   private model: Live2DModel | null = null;
+  private currentModelId: PetModelId;
+  private loadingModelId: PetModelId | null = null;
   private motionPriority: typeof Live2DMotionPriority | null = null;
-  private lookAtMouseEnabled = false;
+  private lookAtMouseEnabled = true;
   private actionRunId = 0;
+  private loadRunId = 0;
   private effectAnimationFrame: number | null = null;
 
   /**
    * Creates a Live2D renderer instance without loading model assets yet.
    *
-   * Inputs: DOM host, status element, and context-menu callback.
+   * Inputs: DOM host, initial model id, status element, and context-menu
+   * callback.
    * Returns: constructed renderer.
    * Errors: PixiJS may throw if WebGL cannot initialize.
-   * Side effects: creates and appends a PixiJS canvas.
+   * Side effects: creates/appends a PixiJS canvas and registers pointer
+   * listeners on it.
    */
   constructor(options: Live2DPetRendererOptions) {
     this.host = options.host;
     this.statusElement = options.statusElement;
     this.openActionMenu = options.openActionMenu;
+    this.currentModelId = options.initialModelId;
     this.app = new PIXI.Application({
       antialias: true,
       autoDensity: true,
@@ -82,46 +99,43 @@ export class Live2DPetRenderer {
 
     this.app.view.classList.add('live2d-canvas');
     this.host.append(this.app.view as HTMLCanvasElement);
+    this.registerPointerHandlers();
     this.resize();
   }
 
   /**
-   * Loads the Tororo Live2D model and attaches pointer handlers.
+   * Loads the initially selected Live2D model.
    *
-   * Inputs: none; uses the fixed local `MODEL_URL`.
+   * Inputs: none; uses the model id supplied at construction time.
    * Returns: promise resolving after model load succeeds or fails visibly.
    * Errors: loader failures are caught and shown in the development status UI.
-   * Side effects: reads local assets, mutates Pixi stage, registers DOM
-   * listeners on the Pixi canvas, and reports concise status to the tray menu.
+   * Side effects: reads local assets, mutates Pixi stage, and reports concise
+   * status to the tray menu.
    */
   async initialize(): Promise<void> {
-    try {
-      exposePixiGlobal();
-      const { Live2DModel, MotionPriority } = await import('pixi-live2d-display/cubism4');
-      const model = await Live2DModel.from(MODEL_URL, {
-        autoInteract: false,
-        idleMotionGroup: 'Idle'
-      });
+    exposePixiGlobal();
+    await this.loadModel(this.currentModelId);
+  }
 
-      this.motionPriority = MotionPriority;
-      this.model = model;
-      this.app.stage.addChild(model);
-      this.layoutModel();
-      this.registerPointerHandlers();
-      await this.playIdle();
-
-      this.statusElement.textContent = `Live2D 已加载 | Tororo | model=${Math.round(model.width)}x${Math.round(model.height)} | API=http://127.0.0.1:17321`;
-      this.statusElement.hidden = true;
-      window.desktopPet?.reportRendererStatus('白猫已就绪');
-      requestAnimationFrame(() => {
-        this.resize();
-      });
-    } catch (error) {
-      console.error('Failed to load Live2D pet model.', error);
-      this.statusElement.textContent = 'Live2D 模型加载失败';
-      this.statusElement.hidden = false;
-      window.desktopPet?.reportRendererStatus('Live2D 模型加载失败');
+  /**
+   * Switches to a different bundled Live2D model.
+   *
+   * Inputs: validated bundled model id from the preload bridge.
+   * Returns: promise resolving after the new model loads or the failure is
+   * reported.
+   * Errors: loader failures are caught so the previous model can remain active.
+   * Side effects: may read local assets, replace the Pixi stage model, reset
+   * temporary actions, and report status to the tray menu.
+   */
+  async setModel(modelId: PetModelId): Promise<void> {
+    if (
+      this.loadingModelId === modelId ||
+      (this.currentModelId === modelId && this.model && this.loadingModelId === null)
+    ) {
+      return;
     }
+
+    await this.loadModel(modelId);
   }
 
   /**
@@ -145,8 +159,8 @@ export class Live2DPetRenderer {
   /**
    * Applies a persistent action mode to the Live2D cat.
    *
-   * Inputs: `idle` plays idle; `active` maps to a short Tororo movement because
-   * this sample cat has no real walking cycle.
+   * Inputs: `idle` plays idle; `active` maps to a short movement because these
+   * sample cats have no real walking cycle.
    * Returns: nothing.
    * Errors: missing model is ignored.
    * Side effects: may start a Live2D motion.
@@ -173,7 +187,7 @@ export class Live2DPetRenderer {
   }
 
   /**
-   * Triggers a named Tororo Live2D motion.
+   * Triggers a named Live2D motion.
    *
    * Inputs: motion name such as `01` or `08`.
    * Returns: promise resolving after the library accepts or rejects playback.
@@ -220,7 +234,93 @@ export class Live2DPetRenderer {
   }
 
   /**
-   * Plays Tororo's default idle motion.
+   * Loads one bundled Live2D model and swaps it into the Pixi stage.
+   *
+   * Inputs: validated bundled model id.
+   * Returns: promise resolving after successful replacement or handled failure.
+   * Errors: catches loader failures and leaves the previous model untouched.
+   * Side effects: reads local assets, mutates Pixi stage/model state, and
+   * updates renderer/tray status.
+   */
+  private async loadModel(modelId: PetModelId): Promise<void> {
+    const runId = this.startNewLoadRun();
+    this.loadingModelId = modelId;
+    const definition = getLive2DModelDefinition(modelId);
+
+    try {
+      const { Live2DModel, MotionPriority } = await import('pixi-live2d-display/cubism4');
+      const model = await Live2DModel.from(buildLive2DModelUrl(import.meta.env.BASE_URL, modelId), {
+        autoInteract: false,
+        idleMotionGroup: 'Idle'
+      });
+
+      if (runId !== this.loadRunId) {
+        model.destroy({ children: true, texture: true, baseTexture: true });
+        return;
+      }
+
+      this.replaceModel(model, modelId);
+      this.motionPriority = MotionPriority;
+      await this.playIdle();
+
+      this.statusElement.textContent = `Live2D 已加载 | ${definition.displayName} | model=${Math.round(model.width)}x${Math.round(model.height)} | API=http://127.0.0.1:17321`;
+      this.statusElement.hidden = true;
+      window.desktopPet?.reportRendererStatus(definition.readyStatus);
+      requestAnimationFrame(() => {
+        this.resize();
+      });
+    } catch (error) {
+      console.error('Failed to load Live2D pet model.', error);
+      this.statusElement.textContent = 'Live2D 模型加载失败';
+      this.statusElement.hidden = false;
+      window.desktopPet?.reportRendererStatus('Live2D 模型加载失败');
+    } finally {
+      if (runId === this.loadRunId) {
+        this.loadingModelId = null;
+      }
+    }
+  }
+
+  /**
+   * Starts a new model load generation and clears transient animation state.
+   *
+   * Inputs: none.
+   * Returns: monotonically increasing load generation id.
+   * Errors: does not throw.
+   * Side effects: cancels pending procedural effects and reapplies base layout.
+   */
+  private startNewLoadRun(): number {
+    this.loadRunId += 1;
+    this.startNewActionRun();
+
+    return this.loadRunId;
+  }
+
+  /**
+   * Replaces the active Live2D model in the Pixi stage.
+   *
+   * Inputs: loaded model instance and the id it represents.
+   * Returns: nothing.
+   * Errors: Pixi stage operations may throw if the app is already destroyed.
+   * Side effects: removes and destroys the previous model, adds the new model,
+   * records the current model id, and lays it out.
+   */
+  private replaceModel(model: Live2DModel, modelId: PetModelId): void {
+    const previousModel = this.model;
+
+    if (previousModel) {
+      this.app.stage.removeChild(previousModel);
+      previousModel.destroy({ children: true, texture: true, baseTexture: true });
+    }
+
+    this.currentModelId = modelId;
+    this.model = model;
+    this.app.stage.addChild(model);
+    this.layoutModel();
+  }
+
+  /**
+   * Plays the current model's default idle motion.
    *
    * Inputs: none.
    * Returns: promise resolving to whether playback started.

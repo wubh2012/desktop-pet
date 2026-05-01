@@ -17,6 +17,7 @@ import {
   type PetActionMode,
   type PetOneShotAction
 } from '../shared/petActionMode.js';
+import { isPetModelId, normalizePetModelId, type PetModelId } from '../shared/petModel.js';
 
 /**
  * Safe renderer-facing API exposed through Electron context isolation.
@@ -37,6 +38,10 @@ export interface DesktopPetApi {
   onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
   /** Subscribes to look-at-mouse toggle changes and returns an unsubscribe callback. */
   onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+  /** Subscribes to selected pet model changes and returns an unsubscribe callback. */
+  onPetModelChanged(callback: (modelId: PetModelId) => void): () => void;
+  /** Reads the current main-process pet model selection. */
+  getCurrentPetModel(): Promise<PetModelId>;
   /** Subscribes to persisted model yaw changes and returns an unsubscribe callback. */
   onModelYawChanged(callback: (yawRadians: number) => void): () => void;
   /** Requests that the main process open the native pet action context menu. */
@@ -120,6 +125,43 @@ const api: DesktopPetApi = {
     return () => {
       ipcRenderer.removeListener('pet-look-at-mouse-changed', listener);
     };
+  },
+
+  /**
+   * Subscribes to tray-selected Live2D pet model changes.
+   *
+   * Inputs: `callback` receives only validated bundled model ids.
+   * Returns: an unsubscribe function for removing the IPC listener.
+   * Errors: invalid IPC payloads are ignored.
+   * Side effects: registers an Electron IPC listener until unsubscribed.
+   */
+  onPetModelChanged(callback: (modelId: PetModelId) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isPetModelId(value)) {
+        callback(value);
+      }
+    };
+
+    ipcRenderer.on('pet-model-changed', listener);
+
+    return () => {
+      ipcRenderer.removeListener('pet-model-changed', listener);
+    };
+  },
+
+  /**
+   * Reads the current main-process Live2D pet model selection.
+   *
+   * Inputs: none.
+   * Returns: promise resolving to a safe bundled model id.
+   * Errors: Electron IPC failures reject the promise; invalid values normalize
+   * to the default model id.
+   * Side effects: sends one invoke request to the main process.
+   */
+  async getCurrentPetModel(): Promise<PetModelId> {
+    const value = await ipcRenderer.invoke('get-current-pet-model');
+
+    return normalizePetModelId(value);
   },
 
   /**

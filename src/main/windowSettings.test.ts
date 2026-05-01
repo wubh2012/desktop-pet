@@ -17,7 +17,9 @@ import {
   applySavedWindowBounds,
   normalizeDebugBounds,
   normalizeModelYaw,
+  readPetModelId,
   readModelYaw,
+  writePetModelId,
   writeModelYaw
 } from './windowSettings.js';
 
@@ -91,6 +93,44 @@ describe('windowSettings', () => {
       };
       expect(raw.debugWindowBounds).toEqual({ x: 1, y: 2, width: 300, height: 400 });
       expect(raw.modelYawRadians).toBeCloseTo(Math.PI / 2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('reads and writes selected pet model while preserving existing settings', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'desktop-pet-settings-'));
+    const settingsPath = join(directory, 'settings.json');
+
+    try {
+      writeFileSync(
+        settingsPath,
+        `${JSON.stringify({ debugWindowBounds: { x: 1, y: 2, width: 300, height: 400 } })}\n`,
+        'utf8'
+      );
+      writePetModelId(settingsPath, 'hijiki');
+
+      expect(readPetModelId(settingsPath)).toBe('hijiki');
+
+      const raw = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
+        debugWindowBounds?: unknown;
+        petModelId?: unknown;
+      };
+      expect(raw.debugWindowBounds).toEqual({ x: 1, y: 2, width: 300, height: 400 });
+      expect(raw.petModelId).toBe('hijiki');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('falls back to the default pet model when settings contain an invalid model', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'desktop-pet-settings-'));
+    const settingsPath = join(directory, 'settings.json');
+
+    try {
+      writeFileSync(settingsPath, `${JSON.stringify({ petModelId: 'unknown' })}\n`, 'utf8');
+
+      expect(readPetModelId(settingsPath)).toBe('tororo');
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

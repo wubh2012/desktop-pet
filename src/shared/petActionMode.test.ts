@@ -33,11 +33,10 @@ describe('petActionMode', () => {
       'surprise',
       'cute',
       'greet',
-      'cheer',
-      'attention'
+      'cheer'
     ]);
     expect(isPetOneShotAction('tease')).toBe(true);
-    expect(isPetOneShotAction('attention')).toBe(true);
+    expect(isPetOneShotAction('attention')).toBe(false);
     expect(isPetOneShotAction('jump')).toBe(false);
     expect(isPetOneShotAction('spin')).toBe(false);
     expect(isPetOneShotAction('idle')).toBe(false);

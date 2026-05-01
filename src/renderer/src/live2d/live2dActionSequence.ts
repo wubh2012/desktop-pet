@@ -25,8 +25,7 @@ const ACTION_SEQUENCES: Readonly<Record<PetOneShotAction, Live2DActionSequence>>
   surprise: { motions: ['02'], effect: null },
   cute: { motions: ['07'], effect: null },
   greet: { motions: ['03'], effect: 'pop' },
-  cheer: { motions: ['01', '05'], effect: 'hop' },
-  attention: { motions: ['06', '07'], effect: 'wiggle' }
+  cheer: { motions: ['01', '05'], effect: 'hop' }
 };
 
 /**

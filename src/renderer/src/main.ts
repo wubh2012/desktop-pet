@@ -23,6 +23,7 @@ import {
   type PetActionMode,
   type PetOneShotAction
 } from '../../shared/petActionMode';
+import { DEFAULT_PET_MODEL_ID, isPetModelId, type PetModelId } from '../../shared/petModel';
 import { buildRendererAssetUrl } from './pet/assetUrl';
 import { createDragHandles } from './pet/dragHandles';
 import { showModelLoadFailure, showModelLoadSuccess } from './pet/loadStatus';
@@ -40,6 +41,8 @@ declare global {
       onActionModeChanged(callback: (mode: PetActionMode) => void): () => void;
       onOneShotAction(callback: (action: PetOneShotAction) => void): () => void;
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
+      onPetModelChanged(callback: (modelId: PetModelId) => void): () => void;
+      getCurrentPetModel(): Promise<PetModelId>;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
       openPetActionMenu(): Promise<void>;
       /**
@@ -57,6 +60,7 @@ declare global {
 
 const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'assets/pet.glb');
 const rendererMode = resolveRendererMode(window.location.search);
+const initialPetModelId = await resolveInitialPetModelId();
 const root = document.querySelector<HTMLDivElement>('#app');
 
 if (!root) {
@@ -87,6 +91,7 @@ const live2dPetRenderer =
     ? new Live2DPetRenderer({
         host: canvasHost,
         statusElement,
+        initialModelId: initialPetModelId,
         openActionMenu: () => window.desktopPet?.openPetActionMenu()
       })
     : null;
@@ -104,7 +109,7 @@ const pointer = new THREE.Vector2();
 
 let petRoot: THREE.Object3D | null = null;
 let normalizedModel: THREE.Object3D | null = null;
-let lookAtMouseEnabled = false;
+let lookAtMouseEnabled = true;
 let pointerLookX = 0;
 let modelYawRadians = resolveModelYaw(window.location.search, import.meta.env.DEV);
 
@@ -140,6 +145,11 @@ window.desktopPet?.onLookAtMouseChanged((enabled) => {
     pointerLookX = 0;
   }
 });
+window.desktopPet?.onPetModelChanged((modelId) => {
+  if (isPetModelId(modelId)) {
+    void live2dPetRenderer?.setModel(modelId);
+  }
+});
 window.desktopPet?.onModelYawChanged((yawRadians) => {
   if (!hasDebugModelYawOverride(window.location.search, import.meta.env.DEV)) {
     applyModelYaw(yawRadians);
@@ -151,6 +161,22 @@ if (live2dPetRenderer) {
 } else {
   void loadPetModel();
   requestAnimationFrame(animate);
+}
+
+/**
+ * Reads the initially selected Live2D pet model from the preload bridge.
+ *
+ * Inputs: none; reads optional Electron preload API state.
+ * Returns: current bundled model id or the default model when unavailable.
+ * Errors: IPC failures are caught so renderer startup can continue.
+ * Side effects: may send one IPC invoke request through the preload bridge.
+ */
+async function resolveInitialPetModelId(): Promise<PetModelId> {
+  try {
+    return (await window.desktopPet?.getCurrentPetModel()) ?? DEFAULT_PET_MODEL_ID;
+  } catch {
+    return DEFAULT_PET_MODEL_ID;
+  }
 }
 
 /**

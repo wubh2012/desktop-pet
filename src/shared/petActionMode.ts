@@ -19,8 +19,7 @@ export const PET_ONE_SHOT_ACTIONS = [
   'surprise',
   'cute',
   'greet',
-  'cheer',
-  'attention'
+  'cheer'
 ] as const;
 
 export type PetActionMode = (typeof PET_ACTION_MODES)[number];

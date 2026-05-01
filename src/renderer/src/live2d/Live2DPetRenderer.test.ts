@@ -41,4 +41,28 @@ describe('Live2DPetRenderer module bootstrap', () => {
     expect(source).not.toContain('this.statusElement.hidden = !import.meta.env.DEV;');
     expect(source).toContain('window.desktopPet?.reportRendererStatus');
   });
+
+  test('loads Live2D assets from the selected pet model instead of a fixed Tororo URL', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('initialModelId');
+    expect(source).toContain('setModel(modelId: PetModelId)');
+    expect(source).toContain('buildLive2DModelUrl');
+    expect(source).not.toContain('const MODEL_URL');
+  });
+
+  test('deduplicates same-model requests while the initial model is still loading', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('private loadingModelId: PetModelId | null = null;');
+    expect(source).toContain('this.loadingModelId === modelId');
+    expect(source).toContain('this.loadingModelId = modelId;');
+    expect(source).toContain('this.loadingModelId = null;');
+  });
+
+  test('keeps mouse-follow behavior enabled before the first IPC sync', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('private lookAtMouseEnabled = true;');
+  });
 });

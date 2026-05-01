@@ -23,8 +23,7 @@ export type PetOneShotAction =
   | 'surprise'
   | 'cute'
   | 'greet'
-  | 'cheer'
-  | 'attention';
+  | 'cheer';
 
 export type PetState = PetMode | PetOneShotAction | 'clicked';
 
@@ -233,7 +232,7 @@ export class PetController {
       };
     }
 
-    if (['pet', 'poke', 'cute', 'attention'].includes(this.mode)) {
+    if (['pet', 'poke', 'cute'].includes(this.mode)) {
       const progress = Math.min(this.clickElapsedSeconds / SPIN_DURATION_SECONDS, 1);
 
       return {
@@ -279,7 +278,7 @@ export class PetController {
       return JUMP_DURATION_SECONDS;
     }
 
-    if (['pet', 'poke', 'cute', 'attention'].includes(this.mode)) {
+    if (['pet', 'poke', 'cute'].includes(this.mode)) {
       return SPIN_DURATION_SECONDS;
     }
 

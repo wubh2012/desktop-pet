@@ -48,6 +48,10 @@ describe('parsePetCommand', () => {
       ok: false,
       error: 'Invalid action command.'
     });
+    expect(parsePetCommand({ type: 'action', action: 'attention' })).toEqual({
+      ok: false,
+      error: 'Invalid action command.'
+    });
     expect(parsePetCommand({ type: 'motion', name: '01' })).toEqual({
       ok: false,
       error: 'Unknown command type.'
