@@ -42,6 +42,15 @@ declare global {
       onLookAtMouseChanged(callback: (enabled: boolean) => void): () => void;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
       openPetActionMenu(): Promise<void>;
+      /**
+       * Reports concise renderer lifecycle status for native tray display.
+       *
+       * Inputs: non-sensitive human-readable status.
+       * Returns: nothing.
+       * Errors: main-process validation ignores malformed values.
+       * Side effects: sends one IPC message through the preload bridge.
+       */
+      reportRendererStatus(status: string): void;
     };
   }
 }
@@ -230,9 +239,11 @@ async function loadPetModel(): Promise<void> {
       animationCount: capabilities.animationNames.length,
       platform: window.desktopPet?.platform ?? 'browser'
     });
+    window.desktopPet?.reportRendererStatus('GLB 模型已就绪');
   } catch (error) {
     console.error('Failed to load local pet model.', error);
     showModelLoadFailure(statusElement);
+    window.desktopPet?.reportRendererStatus('模型加载失败');
   }
 }
 

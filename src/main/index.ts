@@ -18,6 +18,7 @@ import {
   Menu,
   nativeImage,
   Tray,
+  type IpcMainEvent,
   type IpcMainInvokeEvent
 } from 'electron';
 import { dirname, join } from 'node:path';
@@ -44,6 +45,7 @@ import {
   type PetActionMenuHandlers,
   type PetActionMenuState
 } from './petActionMenu.js';
+import { normalizeRendererStatusLabel } from './rendererStatus.js';
 import type { PetCommand } from '../shared/petCommand.js';
 import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMode.js';
 
@@ -60,6 +62,7 @@ let lookAtMouseEnabled = false;
 let currentModelYawRadians = 0;
 let isQuitting = false;
 let saveDebugBoundsTimer: NodeJS.Timeout | null = null;
+let rendererStatusLabel = '桌宠状态：启动中';
 
 /**
  * Writes a main-process debug line when diagnostics are enabled.
@@ -217,7 +220,6 @@ function showMainWindowAndSendInitialState(window: BrowserWindow): void {
   sendModelYawToRenderer(window);
 }
 
-
 /**
  * Resolves the settings JSON path for this app.
  *
@@ -288,6 +290,8 @@ function buildTrayMenu(): Menu {
   );
 
   return Menu.buildFromTemplate([
+    { label: rendererStatusLabel, enabled: false },
+    { type: 'separator' },
     {
       label: visible ? '隐藏宠物' : '显示宠物',
       click: () => {
@@ -443,6 +447,26 @@ function handleOpenPetActionMenu(event: IpcMainInvokeEvent): void {
   if (sourceWindow) {
     popupPetActionMenu(sourceWindow);
   }
+}
+
+/**
+ * Handles renderer lifecycle status updates for the tray menu.
+ *
+ * Inputs: IPC event and untrusted status payload from the isolated renderer.
+ * Returns: nothing.
+ * Errors: malformed or blank values are ignored.
+ * Side effects: updates in-memory tray label state and refreshes the native
+ * context menu when a valid status arrives.
+ */
+function handleRendererStatus(_event: IpcMainEvent, value: unknown): void {
+  const nextLabel = normalizeRendererStatusLabel(value);
+
+  if (!nextLabel) {
+    return;
+  }
+
+  rendererStatusLabel = nextLabel;
+  refreshTrayMenu();
 }
 
 /**
@@ -642,6 +666,7 @@ app.whenReady().then(() => {
   app.setName('Desktop Pet');
   currentModelYawRadians = readModelYaw(getSettingsPath()) ?? currentModelYawRadians;
   ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
+  ipcMain.on('pet-renderer-status', handleRendererStatus);
 
   mainWindow = createMainWindow();
   initializeTray();

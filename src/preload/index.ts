@@ -41,6 +41,16 @@ export interface DesktopPetApi {
   onModelYawChanged(callback: (yawRadians: number) => void): () => void;
   /** Requests that the main process open the native pet action context menu. */
   openPetActionMenu(): Promise<void>;
+  /**
+   * Reports renderer lifecycle status for the tray menu.
+   *
+   * Inputs: concise non-sensitive status text; blank and malformed payloads are
+   * ignored by the main process.
+   * Returns: nothing.
+   * Errors: does not throw for normal IPC sends.
+   * Side effects: sends one asynchronous IPC message to the main process.
+   */
+  reportRendererStatus(status: string): void;
 }
 
 const api: DesktopPetApi = {
@@ -145,6 +155,18 @@ const api: DesktopPetApi = {
    */
   async openPetActionMenu(): Promise<void> {
     await ipcRenderer.invoke('open-pet-action-menu');
+  },
+
+  /**
+   * Reports renderer lifecycle status to the main-process tray menu.
+   *
+   * Inputs: concise non-sensitive status text, such as model readiness.
+   * Returns: nothing.
+   * Errors: invalid values are ignored by the main process.
+   * Side effects: sends one asynchronous IPC message.
+   */
+  reportRendererStatus(status: string): void {
+    ipcRenderer.send('pet-renderer-status', status);
   }
 };
 

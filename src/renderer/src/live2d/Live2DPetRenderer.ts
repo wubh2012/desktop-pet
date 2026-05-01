@@ -35,6 +35,15 @@ const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'live2d/tororo
 
 installPixiUnsafeEval({ ShaderSystem });
 
+/**
+ * Construction options for the Live2D desktop-pet renderer.
+ *
+ * Inputs: supplied by the renderer entry point after DOM creation.
+ * Returns: not applicable; this interface describes constructor data.
+ * Errors: invalid DOM nodes surface when PixiJS appends or resizes the canvas.
+ * Side effects: none by itself; the constructor consumes these values to create
+ * WebGL resources and native-menu callbacks.
+ */
 export interface Live2DPetRendererOptions {
   readonly host: HTMLElement;
   readonly statusElement: HTMLElement;
@@ -82,8 +91,8 @@ export class Live2DPetRenderer {
    * Inputs: none; uses the fixed local `MODEL_URL`.
    * Returns: promise resolving after model load succeeds or fails visibly.
    * Errors: loader failures are caught and shown in the development status UI.
-   * Side effects: reads local assets, mutates Pixi stage, and registers DOM
-   * listeners on the Pixi canvas.
+   * Side effects: reads local assets, mutates Pixi stage, registers DOM
+   * listeners on the Pixi canvas, and reports concise status to the tray menu.
    */
   async initialize(): Promise<void> {
     try {
@@ -102,7 +111,8 @@ export class Live2DPetRenderer {
       await this.playIdle();
 
       this.statusElement.textContent = `Live2D 已加载 | Tororo | model=${Math.round(model.width)}x${Math.round(model.height)} | API=http://127.0.0.1:17321`;
-      this.statusElement.hidden = !import.meta.env.DEV;
+      this.statusElement.hidden = true;
+      window.desktopPet?.reportRendererStatus('白猫已就绪');
       requestAnimationFrame(() => {
         this.resize();
       });
@@ -110,6 +120,7 @@ export class Live2DPetRenderer {
       console.error('Failed to load Live2D pet model.', error);
       this.statusElement.textContent = 'Live2D 模型加载失败';
       this.statusElement.hidden = false;
+      window.desktopPet?.reportRendererStatus('Live2D 模型加载失败');
     }
   }
 

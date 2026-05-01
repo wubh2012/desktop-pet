@@ -33,4 +33,12 @@ describe('Live2DPetRenderer module bootstrap', () => {
     expect(applicationIndex).toBeGreaterThanOrEqual(0);
     expect(installIndex).toBeLessThan(applicationIndex);
   });
+
+  test('keeps successful Live2D diagnostics out of the pet window', () => {
+    const source = readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('this.statusElement.hidden = true;');
+    expect(source).not.toContain('this.statusElement.hidden = !import.meta.env.DEV;');
+    expect(source).toContain('window.desktopPet?.reportRendererStatus');
+  });
 });
