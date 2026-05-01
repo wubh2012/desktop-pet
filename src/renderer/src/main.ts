@@ -24,6 +24,12 @@ import {
   type PetOneShotAction
 } from '../../shared/petActionMode';
 import { DEFAULT_PET_MODEL_ID, isPetModelId, type PetModelId } from '../../shared/petModel';
+import type { PetMessageCommand } from '../../shared/petCommand';
+import {
+  DEFAULT_REMINDER_SETTINGS,
+  normalizeReminderSettings,
+  type ReminderSettings
+} from '../../shared/petReminderSettings';
 import { buildRendererAssetUrl } from './pet/assetUrl';
 import { createDragHandles } from './pet/dragHandles';
 import { showModelLoadFailure, showModelLoadSuccess } from './pet/loadStatus';
@@ -32,6 +38,11 @@ import { hasDebugModelYawOverride, resolveModelYaw } from './pet/modelOrientatio
 import { repairMissingMaterials } from './pet/materialRepair';
 import { PetController, type PetTransform } from './pet/PetController';
 import { detectModelCapabilities } from './pet/modelCapabilities';
+import {
+  createInitialReminderState,
+  getDueReminder,
+  type PetReminderState
+} from './pet/reminders';
 import { Live2DPetRenderer } from './live2d/Live2DPetRenderer';
 
 declare global {
@@ -44,6 +55,9 @@ declare global {
       onPetModelChanged(callback: (modelId: PetModelId) => void): () => void;
       getCurrentPetModel(): Promise<PetModelId>;
       onModelYawChanged(callback: (yawRadians: number) => void): () => void;
+      onPetMessage(callback: (message: PetMessageCommand) => void): () => void;
+      showPetMessage(message: PetMessageCommand): Promise<void>;
+      getReminderSettings(): Promise<ReminderSettings>;
       openPetActionMenu(): Promise<void>;
       /**
        * Reports concise renderer lifecycle status for native tray display.
@@ -58,19 +72,98 @@ declare global {
   }
 }
 
+/**
+ * Reads the initially selected Live2D pet model from the preload bridge.
+ *
+ * Inputs: none; reads optional Electron preload API state.
+ * Returns: current bundled model id or the default model when unavailable.
+ * Errors: IPC failures are caught so renderer startup can continue.
+ * Side effects: may send one IPC invoke request through the preload bridge.
+ */
+async function resolveInitialPetModelId(): Promise<PetModelId> {
+  try {
+    return (await window.desktopPet?.getCurrentPetModel()) ?? DEFAULT_PET_MODEL_ID;
+  } catch {
+    return DEFAULT_PET_MODEL_ID;
+  }
+}
+
+/**
+ * Resolves which renderer implementation should be shown.
+ *
+ * Inputs: URL search string from the Electron renderer window.
+ * Returns: `three` only when explicitly requested; otherwise `live2d`.
+ * Errors: does not throw for malformed query strings.
+ * Side effects: none.
+ */
+function resolveRendererMode(search: string): 'live2d' | 'three' {
+  return new URLSearchParams(search).get('renderer') === 'three' ? 'three' : 'live2d';
+}
+
+/**
+ * Resolves whether this renderer instance owns the pet or a standalone bubble.
+ *
+ * Inputs: URL search string from the Electron renderer window.
+ * Returns: `bubble` only for the independent transparent bubble window;
+ * otherwise `pet`.
+ * Errors: does not throw for malformed query strings.
+ * Side effects: none.
+ */
+function resolveRendererView(search: string): 'bubble' | 'pet' {
+  return new URLSearchParams(search).get('view') === 'bubble' ? 'bubble' : 'pet';
+}
+
 const MODEL_URL = buildRendererAssetUrl(import.meta.env.BASE_URL, 'assets/pet.glb');
 const rendererMode = resolveRendererMode(window.location.search);
-const initialPetModelId = await resolveInitialPetModelId();
+const rendererView = resolveRendererView(window.location.search);
+const initialPetModelId = rendererView === 'pet' ? await resolveInitialPetModelId() : DEFAULT_PET_MODEL_ID;
 const root = document.querySelector<HTMLDivElement>('#app');
 
 if (!root) {
   throw new Error('Renderer root #app was not found.');
 }
 
-const statusElement = createStatusElement();
-const canvasHost = createCanvasHost();
-const dragHandles = createDragHandles();
-root.append(canvasHost, ...dragHandles, statusElement);
+function createBubbleElement(): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = 'pet-bubble';
+  element.setAttribute('aria-live', 'polite');
+  element.hidden = true;
+  return element;
+}
+
+function showBubble(element: HTMLDivElement, text: string, durationMs: number): void {
+  const message = text.trim();
+
+  if (!message) {
+    return;
+  }
+
+  element.textContent = message;
+  element.hidden = false;
+  element.classList.add('pet-bubble--visible');
+  window.setTimeout(() => {
+    element.classList.remove('pet-bubble--visible');
+  }, durationMs);
+}
+
+if (rendererView === 'bubble') {
+  document.body.classList.add('bubble-view');
+  const petBubbleElement = createBubbleElement();
+  root.append(petBubbleElement);
+
+  window.desktopPet?.onPetMessage((message) => {
+    const durationMs = (message.durationSeconds ?? DEFAULT_REMINDER_SETTINGS.bubbleDurationSeconds) * 1000;
+    showBubble(petBubbleElement, message.text, durationMs);
+  });
+} else {
+  initializePetView(root);
+}
+
+function initializePetView(root: HTMLDivElement): void {
+  const statusElement = createStatusElement();
+  const canvasHost = createCanvasHost();
+  const dragHandles = createDragHandles();
+  root.append(canvasHost, ...dragHandles, statusElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
@@ -112,6 +205,7 @@ let normalizedModel: THREE.Object3D | null = null;
 let lookAtMouseEnabled = true;
 let pointerLookX = 0;
 let modelYawRadians = resolveModelYaw(window.location.search, import.meta.env.DEV);
+let reminderState: PetReminderState = createInitialReminderState(Date.now());
 
 setupLights(scene);
 resizeRenderer();
@@ -130,11 +224,7 @@ window.desktopPet?.onActionModeChanged((mode) => {
 });
 window.desktopPet?.onOneShotAction((action) => {
   if (isPetOneShotAction(action)) {
-    if (live2dPetRenderer) {
-      live2dPetRenderer.triggerOneShot(action);
-    } else {
-      petController.triggerOneShot(action);
-    }
+    triggerRendererOneShot(action);
   }
 });
 window.desktopPet?.onLookAtMouseChanged((enabled) => {
@@ -155,40 +245,13 @@ window.desktopPet?.onModelYawChanged((yawRadians) => {
     applyModelYaw(yawRadians);
   }
 });
+void startPetReminders();
 
 if (live2dPetRenderer) {
   void live2dPetRenderer.initialize();
 } else {
   void loadPetModel();
   requestAnimationFrame(animate);
-}
-
-/**
- * Reads the initially selected Live2D pet model from the preload bridge.
- *
- * Inputs: none; reads optional Electron preload API state.
- * Returns: current bundled model id or the default model when unavailable.
- * Errors: IPC failures are caught so renderer startup can continue.
- * Side effects: may send one IPC invoke request through the preload bridge.
- */
-async function resolveInitialPetModelId(): Promise<PetModelId> {
-  try {
-    return (await window.desktopPet?.getCurrentPetModel()) ?? DEFAULT_PET_MODEL_ID;
-  } catch {
-    return DEFAULT_PET_MODEL_ID;
-  }
-}
-
-/**
- * Resolves which renderer implementation should be shown.
- *
- * Inputs: URL search string from the Electron renderer window.
- * Returns: `three` only when explicitly requested; otherwise `live2d`.
- * Errors: does not throw for malformed query strings.
- * Side effects: none.
- */
-function resolveRendererMode(search: string): 'live2d' | 'three' {
-  return new URLSearchParams(search).get('renderer') === 'three' ? 'three' : 'live2d';
 }
 
 /**
@@ -219,6 +282,85 @@ function createStatusElement(): HTMLDivElement {
   element.textContent = '加载中...';
   element.hidden = !import.meta.env.DEV;
   return element;
+}
+
+/**
+ * Creates an inline pet-window bubble element.
+ *
+ * Inputs: none.
+ * Returns: hidden live-region element styled by `.pet-bubble`.
+ * Errors: does not throw.
+ * Side effects: none until appended by the caller.
+ */
+function createPetBubbleElement(): HTMLDivElement {
+  const element = document.createElement('div');
+  element.className = 'pet-bubble';
+  element.setAttribute('aria-live', 'polite');
+  element.hidden = true;
+  return element;
+}
+
+/**
+ * Displays text in an inline pet-window bubble for a fixed duration.
+ *
+ * Inputs: bubble element, message text, and duration in milliseconds.
+ * Returns: nothing.
+ * Errors: blank messages are ignored.
+ * Side effects: mutates element text, visibility classes, and schedules a timer.
+ */
+function showPetBubble(petBubbleElement: HTMLDivElement, text: string, durationMs: number): void {
+  const message = text.trim();
+
+  if (!message) {
+    return;
+  }
+
+  petBubbleElement.textContent = message;
+  petBubbleElement.hidden = false;
+  petBubbleElement.classList.add('pet-bubble--visible');
+  window.setTimeout(() => {
+    petBubbleElement.classList.remove('pet-bubble--visible');
+  }, durationMs);
+}
+
+async function startPetReminders(): Promise<void> {
+  const settings = await resolveReminderSettings();
+
+  if (!settings.enabled) {
+    return;
+  }
+
+  window.setInterval(() => {
+    const decision = getDueReminder(new Date(), reminderState, settings);
+
+    if (!decision) {
+      return;
+    }
+
+    reminderState = decision.nextState;
+    void window.desktopPet?.showPetMessage({
+      type: 'message',
+      text: decision.reminder.text,
+      durationSeconds: settings.bubbleDurationSeconds
+    });
+    triggerRendererOneShot(decision.reminder.action);
+  }, 60 * 1000);
+}
+
+async function resolveReminderSettings(): Promise<ReminderSettings> {
+  try {
+    return normalizeReminderSettings(await window.desktopPet?.getReminderSettings());
+  } catch {
+    return DEFAULT_REMINDER_SETTINGS;
+  }
+}
+
+function triggerRendererOneShot(action: PetOneShotAction): void {
+  if (live2dPetRenderer) {
+    live2dPetRenderer.triggerOneShot(action);
+  } else {
+    petController.triggerOneShot(action);
+  }
 }
 
 /**
@@ -457,4 +599,5 @@ function resizeRenderer(): void {
   camera.updateProjectionMatrix();
   renderer.setSize(width, height, false);
   live2dPetRenderer?.resize();
+}
 }

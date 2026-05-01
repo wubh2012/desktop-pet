@@ -38,6 +38,25 @@ describe('parsePetCommand', () => {
     });
   });
 
+  test('accepts message commands', () => {
+    expect(
+      parsePetCommand({
+        type: 'message',
+        text: ' 主人～该休息啦 ',
+        action: 'cute',
+        durationSeconds: 8
+      })
+    ).toEqual({
+      ok: true,
+      command: {
+        type: 'message',
+        text: '主人～该休息啦',
+        action: 'cute',
+        durationSeconds: 8
+      }
+    });
+  });
+
   test('rejects malformed commands with stable error messages', () => {
     expect(parsePetCommand(null)).toEqual({ ok: false, error: 'Command must be an object.' });
     expect(parsePetCommand({ type: 'mode', mode: 'sleep' })).toEqual({
@@ -59,6 +78,18 @@ describe('parsePetCommand', () => {
     expect(parsePetCommand({ type: 'lookAtMouse', enabled: 'yes' })).toEqual({
       ok: false,
       error: 'Invalid lookAtMouse command.'
+    });
+    expect(parsePetCommand({ type: 'message', text: '' })).toEqual({
+      ok: false,
+      error: 'Invalid message command.'
+    });
+    expect(parsePetCommand({ type: 'message', text: 'hi', action: 'jump' })).toEqual({
+      ok: false,
+      error: 'Invalid message command.'
+    });
+    expect(parsePetCommand({ type: 'message', text: 'hi', durationSeconds: -1 })).toEqual({
+      ok: false,
+      error: 'Invalid message command.'
     });
     expect(parsePetCommand({ type: 'unknown' })).toEqual({
       ok: false,

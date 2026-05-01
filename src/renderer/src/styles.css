@@ -10,7 +10,8 @@
  * the pet renderer.
  *
  * Key constraints: backgrounds must remain transparent for Electron window
- * transparency, and visible text must be limited to development status.
+ * transparency, while visible text is limited to development status and the
+ * production pet reminder bubble.
  */
 
 :root {
@@ -91,6 +92,57 @@ body {
   width: min(32px, 22vw);
 }
 
+.pet-bubble {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 3;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 9px 13px;
+  border: 1px solid rgba(255, 190, 220, 0.72);
+  border-radius: 18px 18px 18px 6px;
+  background: linear-gradient(135deg, rgba(255, 250, 253, 0.96), rgba(255, 235, 246, 0.94));
+  box-shadow: 0 10px 26px rgba(91, 51, 69, 0.22);
+  color: #5b3345;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-6px) scale(0.96);
+  transition: opacity 180ms ease, transform 180ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.pet-bubble::after {
+  position: absolute;
+  bottom: -7px;
+  left: 34px;
+  width: 14px;
+  height: 14px;
+  border-right: 1px solid rgba(255, 190, 220, 0.72);
+  border-bottom: 1px solid rgba(255, 190, 220, 0.72);
+  background: rgba(255, 235, 246, 0.94);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.pet-bubble--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+.bubble-view #app {
+  overflow: hidden;
+}
+
+.bubble-view .pet-bubble {
+  top: auto;
+  bottom: 8px;
+  max-width: calc(100% - 24px);
+}
+
 .status {
   position: fixed;
   left: 10px;
@@ -109,5 +161,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .canvas-host canvas {
     cursor: default;
+  }
+
+  .pet-bubble {
+    transition: none;
   }
 }

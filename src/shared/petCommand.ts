@@ -31,10 +31,18 @@ export interface PetLookAtMouseCommand {
   readonly enabled: boolean;
 }
 
+export interface PetMessageCommand {
+  readonly type: 'message';
+  readonly text: string;
+  readonly action?: PetOneShotAction;
+  readonly durationSeconds?: number;
+}
+
 export type PetCommand =
   | PetModeCommand
   | PetActionCommand
-  | PetLookAtMouseCommand;
+  | PetLookAtMouseCommand
+  | PetMessageCommand;
 
 export type PetCommandParseResult =
   | { readonly ok: true; readonly command: PetCommand }
@@ -68,6 +76,8 @@ export function parsePetCommand(value: unknown): PetCommandParseResult {
       return typeof value.enabled === 'boolean'
         ? { ok: true, command: { type: 'lookAtMouse', enabled: value.enabled } }
         : { ok: false, error: 'Invalid lookAtMouse command.' };
+    case 'message':
+      return parseMessageCommand(value);
     default:
       return { ok: false, error: 'Unknown command type.' };
   }
@@ -81,6 +91,39 @@ export function parsePetCommand(value: unknown): PetCommandParseResult {
  * Errors: does not throw.
  * Side effects: none.
  */
+function parseMessageCommand(value: Record<string, unknown>): PetCommandParseResult {
+  if (typeof value.text !== 'string' || value.text.trim().length === 0) {
+    return { ok: false, error: 'Invalid message command.' };
+  }
+
+  const command: PetMessageCommand = {
+    type: 'message',
+    text: value.text.trim()
+  };
+
+  if (value.action !== undefined) {
+    if (!isPetOneShotAction(value.action)) {
+      return { ok: false, error: 'Invalid message command.' };
+    }
+
+    return withOptionalDuration({ ...command, action: value.action }, value.durationSeconds);
+  }
+
+  return withOptionalDuration(command, value.durationSeconds);
+}
+
+function withOptionalDuration(command: PetMessageCommand, durationSeconds: unknown): PetCommandParseResult {
+  if (durationSeconds === undefined) {
+    return { ok: true, command };
+  }
+
+  if (typeof durationSeconds !== 'number' || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return { ok: false, error: 'Invalid message command.' };
+  }
+
+  return { ok: true, command: { ...command, durationSeconds } };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

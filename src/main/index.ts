@@ -17,6 +17,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  screen,
   Tray,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -30,11 +31,13 @@ import {
   readDebugWindowBounds,
   readPetModelId,
   readModelYaw,
+  readReminderSettings,
   writePetModelId,
   writeModelYaw,
   writeDebugWindowBounds,
   type WindowBounds
 } from './windowSettings.js';
+import { calculateBubbleWindowBounds } from './bubbleWindowBounds.js';
 import { resolveWindowMode } from './windowMode.js';
 import { createTrayImage } from './trayIcon.js';
 import {
@@ -45,7 +48,7 @@ import { buildPetContextMenuTemplate, type PetContextMenuHandlers } from './petA
 import { buildTrayMenuTemplate } from './trayMenu.js';
 import { normalizeRendererStatusLabel } from './rendererStatus.js';
 import { registerSystemContextMenuSuppression } from './systemContextMenu.js';
-import type { PetCommand } from '../shared/petCommand.js';
+import { parsePetCommand, type PetCommand } from '../shared/petCommand.js';
 import { type PetActionMode, type PetOneShotAction } from '../shared/petActionMode.js';
 import { type PetModelId } from '../shared/petModel.js';
 
@@ -53,9 +56,13 @@ const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
 const debugLogPath = join(process.cwd(), 'desktop-pet-debug.log');
 
+const BUBBLE_WINDOW_SIZE = { width: 320, height: 104 } as const;
+
 let mainWindow: BrowserWindow | null = null;
+let bubbleWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let petCommandServer: PetCommandServer | null = null;
+let hideBubbleTimer: NodeJS.Timeout | null = null;
 let debugWindowMode = false;
 let currentActionMode: PetActionMode = 'idle';
 let currentPetModelId: PetModelId = 'tororo';
@@ -155,11 +162,13 @@ function createMainWindow(): BrowserWindow {
   window.on('resize', () => {
     writeDebugLog(`window:resize ${JSON.stringify(window.getBounds())}`);
     scheduleDebugWindowBoundsSave(window);
+    positionBubbleWindow();
   });
 
   window.on('move', () => {
     writeDebugLog(`window:move ${JSON.stringify(window.getBounds())}`);
     scheduleDebugWindowBoundsSave(window);
+    positionBubbleWindow();
   });
   window.on('closed', () => {
     writeDebugLog('window:closed');
@@ -521,6 +530,122 @@ function triggerOneShotAction(action: PetOneShotAction): void {
   }
 }
 
+function sendPetMessageToRenderer(text: string, durationSeconds?: number, action?: PetOneShotAction): void {
+  showBubbleMessage(text, durationSeconds);
+
+  if (action) {
+    triggerOneShotAction(action);
+  }
+}
+
+function createBubbleWindow(): BrowserWindow {
+  const window = new BrowserWindow({
+    width: BUBBLE_WINDOW_SIZE.width,
+    height: BUBBLE_WINDOW_SIZE.height,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    show: false,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(currentDirectory, '../preload/index.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  window.setMenu(null);
+  window.setAlwaysOnTop(true, 'screen-saver');
+  window.setIgnoreMouseEvents(true);
+  window.on('closed', () => {
+    bubbleWindow = null;
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}?view=bubble`);
+  } else {
+    void window.loadFile(join(currentDirectory, '../renderer/index.html'), { query: { view: 'bubble' } });
+  }
+
+  return window;
+}
+
+function showBubbleMessage(text: string, durationSeconds?: number): void {
+  const message = text.trim();
+
+  if (!message || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const targetWindow = bubbleWindow && !bubbleWindow.isDestroyed() ? bubbleWindow : createBubbleWindow();
+  bubbleWindow = targetWindow;
+  positionBubbleWindow();
+  targetWindow.showInactive();
+  targetWindow.setAlwaysOnTop(true, 'screen-saver');
+  sendMessageToBubbleWindow(targetWindow, message, durationSeconds);
+
+  if (hideBubbleTimer) {
+    clearTimeout(hideBubbleTimer);
+  }
+
+  hideBubbleTimer = setTimeout(() => {
+    hideBubbleMessage();
+  }, (durationSeconds ?? 8) * 1000);
+}
+
+function sendMessageToBubbleWindow(window: BrowserWindow, text: string, durationSeconds?: number): void {
+  const payload = { type: 'message', text, durationSeconds };
+
+  if (window.webContents.isLoading()) {
+    window.webContents.once('did-finish-load', () => {
+      if (!window.isDestroyed()) {
+        window.webContents.send('pet-message', payload);
+      }
+    });
+    return;
+  }
+
+  window.webContents.send('pet-message', payload);
+}
+
+function hideBubbleMessage(): void {
+  if (hideBubbleTimer) {
+    clearTimeout(hideBubbleTimer);
+    hideBubbleTimer = null;
+  }
+
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+    bubbleWindow.hide();
+  }
+}
+
+/**
+ * Positions the independent bubble window near the current pet window.
+ *
+ * Inputs: none; reads the current main and bubble BrowserWindow instances.
+ * Returns: nothing.
+ * Errors: missing or destroyed windows are ignored.
+ * Side effects: mutates the bubble window bounds, including before first show
+ * so HTTP-triggered messages appear next to the pet immediately. Uses the main
+ * window content bounds so framed debug windows do not add title-bar distance.
+ */
+function positionBubbleWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !bubbleWindow || bubbleWindow.isDestroyed()) {
+    return;
+  }
+
+  const petBounds = mainWindow.getContentBounds();
+  const display = screen.getDisplayMatching(petBounds);
+  const bounds = calculateBubbleWindowBounds(petBounds, BUBBLE_WINDOW_SIZE, display.workArea);
+  bubbleWindow.setBounds(bounds, false);
+}
+
 /**
  * Dispatches a validated external command to local app behavior.
  *
@@ -539,6 +664,9 @@ function dispatchPetCommand(command: PetCommand): void {
       return;
     case 'lookAtMouse':
       setLookAtMouseEnabled(command.enabled);
+      return;
+    case 'message':
+      sendPetMessageToRenderer(command.text, command.durationSeconds, command.action);
       return;
   }
 }
@@ -701,6 +829,14 @@ app.whenReady().then(() => {
   ipcMain.handle('open-pet-action-menu', handleOpenPetActionMenu);
   ipcMain.handle('get-current-pet-model', () => currentPetModelId);
   ipcMain.on('pet-renderer-status', handleRendererStatus);
+  ipcMain.handle('get-reminder-settings', () => readReminderSettings(getSettingsPath()));
+  ipcMain.handle('show-pet-message', (_event, value: unknown) => {
+    const parsed = parsePetCommand(value);
+
+    if (parsed.ok && parsed.command.type === 'message') {
+      showBubbleMessage(parsed.command.text, parsed.command.durationSeconds);
+    }
+  });
 
   mainWindow = createMainWindow();
   initializeTray();
@@ -716,6 +852,13 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   void petCommandServer?.close();
   petCommandServer = null;
+  hideBubbleMessage();
+
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+    bubbleWindow.destroy();
+  }
+
+  bubbleWindow = null;
 });
 
 app.on('window-all-closed', () => {
