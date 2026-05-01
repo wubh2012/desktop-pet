@@ -50,13 +50,77 @@ npm install
 npm run dev
 ```
 
-## 构建
+## 构建与打包
 
 ```bash
 npm run build
 ```
 
-构建产物输出到 `out/`。当前项目还没有接入安装包打包工具。
+构建产物输出到 `out/`。`out/` 只是 Electron/Vite 的生产构建结果，不适合直接发给别人安装。
+
+生成免安装目录包：
+
+```bash
+npm run dist:dir
+```
+
+生成 Windows x64 NSIS 安装包：
+
+```bash
+npm run dist:win
+```
+
+生成或更新 Windows 应用图标：
+
+```powershell
+npm run icon:ico
+```
+
+该命令默认读取 `scripts/app.png`，生成多尺寸 ICO 和托盘 PNG：
+
+```text
+build/icon.ico
+build/tray-16.png
+build/tray-32.png
+```
+
+如需指定其他源图片或输出目录：
+
+```powershell
+npm run icon:ico -- "G:\OneDrive\Pictures\pet.jpg" "build"
+```
+
+源图片可以是 Sharp 支持读取的常见格式，例如 PNG、JPG、WebP；推荐使用正方形、透明背景、至少 `512x512` 的图片。开发模式和打包后的运行时托盘图标会优先使用 `tray-32.png`，缺失时回退到内置图标。
+
+安装包与打包产物输出到 `release/`，其中：
+
+```text
+release/win-unpacked/                 免安装运行目录
+release/Desktop Pet Setup 0.1.0.exe   Windows 安装包
+build/icon.ico                        Windows 应用与安装包图标
+build/tray-16.png                     Windows 托盘 16px 图标
+build/tray-32.png                     Windows 托盘 32px 图标
+```
+
+如果 Electron 或 electron-builder 的二进制资源从 GitHub 下载失败，可以在当前 PowerShell 会话中设置镜像后再打包：
+
+```powershell
+$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
+$env:electron_builder_binaries_mirror='https://npmmirror.com/mirrors/electron-builder-binaries/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
+npm run dist:win
+```
+
+如果 Windows 普通终端提示无法创建符号链接，通常是 `winCodeSign` 解压时缺少符号链接权限。正式打包建议使用管理员终端，或开启 Windows 开发者模式后重新运行 `npm run dist:win`。如果只是本机临时试包，可以跳过 Windows 可执行文件资源编辑：
+
+```powershell
+$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
+$env:electron_builder_binaries_mirror='https://npmmirror.com/mirrors/electron-builder-binaries/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
+npx electron-builder --win nsis --config.win.signAndEditExecutable=false
+```
+
+临时试包会使用 Electron 默认图标，且不会写入完整的 Windows 可执行文件元信息；对外发布前应补充应用图标并执行完整打包流程。
 
 ## 测试与类型检查
 
@@ -252,4 +316,4 @@ src/renderer/
 - 接入更多 Live2D 模型，并做模型切换。
 - 使用 Live2D Cubism Editor 制作新的 `.motion3.json` 自定义动作。
 - 增加语音、对话、系统事件触发和更丰富的外部 API。
-- 接入打包工具生成安装包。
+- 补充正式应用图标，并完善安装包签名与发布流程。

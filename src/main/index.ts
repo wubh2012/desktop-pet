@@ -18,8 +18,7 @@ import {
   Menu,
   nativeImage,
   Tray,
-  type IpcMainInvokeEvent,
-  type NativeImage
+  type IpcMainInvokeEvent
 } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +33,7 @@ import {
   type WindowBounds
 } from './windowSettings.js';
 import { resolveWindowMode } from './windowMode.js';
+import { createTrayImage } from './trayIcon.js';
 import { buildModelOrientationMenuTemplate } from './modelOrientationMenu.js';
 import {
   startPetCommandServer,
@@ -217,23 +217,6 @@ function showMainWindowAndSendInitialState(window: BrowserWindow): void {
   sendModelYawToRenderer(window);
 }
 
-/**
- * Creates a small tray icon image for the desktop pet controls.
- *
- * Inputs: none.
- * Returns: an Electron `NativeImage` built from an embedded SVG data URL.
- * Errors: does not throw under normal Electron image decoding; if decoding
- * fails, Electron returns an empty image and the tray still initializes.
- * Side effects: none.
- */
-function createTrayImage(): NativeImage {
-  const pngBase64 =
-    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHuSURBVFhH7ZY9SwNBEIbzTyJEsIg2aqEIEoSARUBQEFIIAYuAaCEpRAuJhaRQU2gqG8VCsTCN2kQLxUKx8AMiFoqFCoKCKAgKFivvwcpm5nZv7xTSXPHkSPZu5tmPmUskGosnorF4vl5E8NHQ2CzqRSgQCgQW6EmmxGA680tvaoDdY4NvgemZgri6vhGfX9+M27t7MV8siaZ4G3tOh7UAZnxyesaSugHBvv40i+GGlcB4blK8vX+wRF7MFhZYLIqnAGYeJLkE54PG9CVgu+w6Hh6fREtrJ4trJYADRwMGYX2zzGJbCeBU02Dg8OhYuy1uY/iuWwWtAOqaBkcgnAmMIyCW12YMDGdHWQ6jwMhYjgnQpVwsLVuNAV1FaAUmpvJMALNSm4x6QE1jAA2K5jAKoPapAECTmSsuicr+ga8x3wLoZDTIX8CW0hxGASzn88srC0QPF0U33tWdZDmMAmB1baMmyPlFVbR3JLT9Yau87YjjQNY8d1llsa0EkEydEfZWjmGLsN9Ihqv6Ol5RxFGeple1UQCgftXZ7OxWHDF6H8DvanKgKz+JpwCgW4FZyZkPZbLOFYlpB9xTVkyHlQBAWbodSjcg4jVzibUAwBKj19OEKn7+jABfAhKUFDolmosElSHfBX4IJPCfhAKhwA8hqC3zfwzKjQAAAABJRU5ErkJggg==';
-  const image = nativeImage.createFromDataURL(`data:image/png;base64,${pngBase64}`);
-  image.setTemplateImage(false);
-
-  return image.resize({ width: 16, height: 16 });
-}
 
 /**
  * Resolves the settings JSON path for this app.
@@ -356,7 +339,13 @@ function buildTrayMenu(): Menu {
  * handlers for this process.
  */
 function initializeTray(): void {
-  tray = new Tray(createTrayImage());
+  tray = new Tray(
+    createTrayImage(nativeImage, {
+      isPackaged: app.isPackaged,
+      cwd: process.cwd(),
+      resourcesPath: process.resourcesPath
+    })
+  );
   tray.setToolTip('Desktop Pet');
   tray.on('click', () => {
     mainWindow?.show();
