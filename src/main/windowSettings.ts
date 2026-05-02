@@ -144,6 +144,29 @@ export function applySavedWindowBounds<T extends DebugBoundsFallback>(
 }
 
 /**
+ * Builds persisted pet sizing from a framed debug window.
+ *
+ * Inputs: `windowBounds` is the native outer window rectangle used for stable
+ * placement; `contentBounds` is the renderer content rectangle that controls
+ * the visible pet size.
+ * Returns: bounds that preserve native top-left position but store content
+ * width and height so frameless pet mode does not become larger.
+ * Errors: does not throw.
+ * Side effects: none.
+ */
+export function createContentSizedWindowBounds(
+  windowBounds: WindowBounds,
+  contentBounds: WindowBounds
+): WindowBounds {
+  return {
+    x: windowBounds.x,
+    y: windowBounds.y,
+    width: contentBounds.width,
+    height: contentBounds.height
+  };
+}
+
+/**
  * Reads debug-window bounds from a JSON settings file.
  *
  * Inputs: `settingsPath` is an absolute or project-relative JSON file path;

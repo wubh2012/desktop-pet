@@ -17,6 +17,8 @@ export interface ResolvedWindowMode {
   readonly height: number;
   readonly minWidth?: number;
   readonly minHeight?: number;
+  /** Treats BrowserWindow width and height as renderer content size. */
+  readonly useContentSize?: boolean;
   readonly frame: boolean;
   readonly resizable: boolean;
   readonly transparent: boolean;
@@ -42,6 +44,7 @@ export function resolveWindowMode(debugMode: boolean): ResolvedWindowMode {
       height: 560,
       minWidth: 120,
       minHeight: 120,
+      useContentSize: true,
       frame: true,
       resizable: true,
       transparent: false,
@@ -55,6 +58,7 @@ export function resolveWindowMode(debugMode: boolean): ResolvedWindowMode {
   return {
     width: 340,
     height: 430,
+    useContentSize: true,
     frame: false,
     resizable: false,
     transparent: true,

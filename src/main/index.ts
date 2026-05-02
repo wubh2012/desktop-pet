@@ -28,6 +28,7 @@ import { appendFileSync } from 'node:fs';
 
 import {
   applySavedWindowBounds,
+  createContentSizedWindowBounds,
   readDebugWindowBounds,
   readPetModelId,
   readModelYaw,
@@ -117,6 +118,7 @@ function createMainWindow(): BrowserWindow {
     height: mode.height,
     minWidth: mode.minWidth,
     minHeight: mode.minHeight,
+    useContentSize: mode.useContentSize,
     transparent: mode.transparent,
     frame: mode.frame,
     resizable: mode.resizable,
@@ -274,14 +276,18 @@ function scheduleDebugWindowBoundsSave(window: BrowserWindow): void {
  * Inputs: `window` is expected to be a debug BrowserWindow.
  * Returns: nothing.
  * Errors: does not throw; persistence is best-effort.
- * Side effects: writes non-sensitive bounds to the local user settings file.
+ * Side effects: writes non-sensitive bounds to the local user settings file,
+ * storing content size so frameless pet mode matches debug-mode visual size.
  */
 function saveDebugWindowBoundsNow(window: BrowserWindow): void {
   if (!debugWindowMode || window.isDestroyed()) {
     return;
   }
 
-  const bounds: WindowBounds = window.getBounds();
+  const bounds: WindowBounds = createContentSizedWindowBounds(
+    window.getBounds(),
+    window.getContentBounds()
+  );
   writeDebugWindowBounds(getSettingsPath(), bounds);
 }
 

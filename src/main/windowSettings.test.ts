@@ -15,6 +15,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   applySavedWindowBounds,
+  createContentSizedWindowBounds,
   DEFAULT_REMINDER_SETTINGS,
   normalizeDebugBounds,
   normalizeModelYaw,
@@ -67,6 +68,15 @@ describe('windowSettings', () => {
 
     expect(normal).toMatchObject(saved);
     expect(debug).toMatchObject(saved);
+  });
+
+  test('builds saved bounds from content size while preserving native window position', () => {
+    const bounds = createContentSizedWindowBounds(
+      { x: 914, y: 569, width: 182, height: 187 },
+      { x: 922, y: 600, width: 174, height: 156 }
+    );
+
+    expect(bounds).toEqual({ x: 914, y: 569, width: 174, height: 156 });
   });
 
   test('keeps finite model yaw values and rejects invalid values', () => {

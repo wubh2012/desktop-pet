@@ -20,7 +20,8 @@ describe('resolveWindowMode', () => {
       resizable: false,
       transparent: true,
       skipTaskbar: true,
-      hasShadow: false
+      hasShadow: false,
+      useContentSize: true
     });
     expect(resolveWindowMode(false).minWidth).toBeUndefined();
     expect(resolveWindowMode(false).minHeight).toBeUndefined();
@@ -36,7 +37,8 @@ describe('resolveWindowMode', () => {
       resizable: true,
       transparent: false,
       skipTaskbar: false,
-      hasShadow: true
+      hasShadow: true,
+      useContentSize: true
     });
   });
 });
