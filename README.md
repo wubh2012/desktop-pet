@@ -2,18 +2,20 @@
 
 基于 Electron、Vite、TypeScript、Live2D 和 Three.js 的桌面电子宠物。
 
-当前默认桌宠是 Live2D 官方 Sample Data 白猫 Tororo。Three.js 版本仍保留为备用渲染器，用于继续加载本地 `public/assets/pet.glb`。
+当前默认桌宠是 Live2D 官方 Sample Data 白猫 Tororo，并内置黑猫 Hijiki 可切换。Three.js 版本仍保留为备用渲染器，用于继续加载本地 `public/assets/pet.glb`。
 
 ## 功能
 
 - 透明、无边框、置顶桌宠窗口。
 - Live2D 白猫 Tororo / 黑猫 Hijiki：眨眼、呼吸、互动动作、默认看着鼠标。
-- 托盘菜单提供完整控制：显示/隐藏、切换模型、状态、互动、高级设置和退出。
+- 托盘菜单提供完整控制：渲染器状态、显示/隐藏、切换模型、状态、互动、高级设置和退出。
 - 宠物本体右键菜单只保留快速互动：摸摸它、逗它一下、轻轻碰它、卖个萌、打个招呼、精神一下、小小惊讶。
+- 可爱提醒气泡：默认提供休息、起身活动和午饭提醒，并触发对应的短动作。
+- 独立透明气泡窗口会跟随桌宠位置，贴近可见宠物区域并保持在屏幕工作区内。
 - 调试窗口模式：显示普通窗口边框，允许用户调整窗口大小。
 - 调试窗口调整后的 `x/y/width/height` 会保存，并同步到退出调试模式后的透明桌宠窗口。
 - 窗口四边有隐形拖动区，小窗口下也更容易拖动。
-- 本地 HTTP API，可由外部程序用语义化命令控制桌宠。
+- 本地 HTTP API，可由外部程序用语义化命令控制桌宠、触发动作或显示消息气泡。
 - Three.js GLB 渲染器保留，可通过 `?renderer=three` 使用。
 
 ## 技术栈
@@ -66,6 +68,13 @@ npm run dist:dir
 npm run dist:win
 ```
 
+Windows 打包配置已在 `package.json` 中内置：
+
+- `config.electron_builder_binaries_mirror` 指向 `https://npmmirror.com/mirrors/electron-builder-binaries/`，用于降低 electron-builder 辅助二进制从 GitHub 下载失败的概率。
+- `build.win.signAndEditExecutable` 为 `false`，避免普通 Windows 终端解压旧版 `winCodeSign` 时因符号链接权限导致打包失败。
+
+该配置优先保证本机可重复打包。若要做对外正式发布，并且需要完整的 Windows 可执行文件元信息、签名或更严格的安装包品牌信息，应重新启用并补齐对应的签名/资源编辑流程。
+
 生成或更新 Windows 应用图标：
 
 ```powershell
@@ -98,25 +107,12 @@ build/tray-16.png                     Windows 托盘 16px 图标
 build/tray-32.png                     Windows 托盘 32px 图标
 ```
 
-如果 Electron 或 electron-builder 的二进制资源从 GitHub 下载失败，可以在当前 PowerShell 会话中设置镜像后再打包：
+如果 Electron 二进制资源从 GitHub 下载失败，可以在当前 PowerShell 会话中设置镜像后再安装或打包：
 
 ```powershell
 $env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
-$env:electron_builder_binaries_mirror='https://npmmirror.com/mirrors/electron-builder-binaries/'
-$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
 npm run dist:win
 ```
-
-如果 Windows 普通终端提示无法创建符号链接，通常是 `winCodeSign` 解压时缺少符号链接权限。正式打包建议使用管理员终端，或开启 Windows 开发者模式后重新运行 `npm run dist:win`。如果只是本机临时试包，可以跳过 Windows 可执行文件资源编辑：
-
-```powershell
-$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
-$env:electron_builder_binaries_mirror='https://npmmirror.com/mirrors/electron-builder-binaries/'
-$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
-npx electron-builder --win nsis --config.win.signAndEditExecutable=false
-```
-
-临时试包会使用 Electron 默认图标，且不会写入完整的 Windows 可执行文件元信息；对外发布前应补充应用图标并执行完整打包流程。
 
 ## 测试与类型检查
 
@@ -128,8 +124,10 @@ npm run typecheck
 ## 使用方式
 
 - 启动后默认显示 Live2D 白猫桌宠。
+- 运行一段时间后会根据提醒设置显示气泡：休息提醒、起身活动提醒、午饭提醒。
 - 右键点击宠物本体可以打开快速互动菜单。
 - 右键系统托盘图标可以打开完整菜单：
+  - 当前渲染器加载状态
   - `显示宠物 / 隐藏宠物`
   - `白猫 Tororo / 黑猫 Hijiki`
   - `安静陪伴 / 活泼一点`
@@ -195,6 +193,20 @@ cheer      精神一下
 { "type": "lookAtMouse", "enabled": false }
 ```
 
+显示一条消息气泡：
+
+```json
+{ "type": "message", "text": "该休息一下啦", "durationSeconds": 8 }
+```
+
+显示消息气泡并同时触发一次互动：
+
+```json
+{ "type": "message", "text": "打个招呼吧", "action": "greet", "durationSeconds": 6 }
+```
+
+`message.text` 会去除首尾空白且不能为空；`durationSeconds` 可省略，提供时必须是正数秒。
+
 示例：
 
 ```powershell
@@ -209,7 +221,7 @@ Invoke-RestMethod `
 
 ## 配置文件
 
-窗口位置和尺寸保存到 Electron 的 `userData` 目录。
+窗口位置、尺寸、模型选择、模型朝向和提醒设置保存到 Electron 的 `userData` 目录。
 
 开发版直接用 Electron 运行时，Windows 上通常是：
 
@@ -227,11 +239,24 @@ Invoke-RestMethod `
     "width": 223,
     "height": 183
   },
-  "modelYawRadians": 0
+  "modelYawRadians": 0,
+  "petModelId": "tororo",
+  "reminders": {
+    "enabled": true,
+    "restIntervalMinutes": 45,
+    "standIntervalMinutes": 60,
+    "minimumGapMinutes": 10,
+    "bubbleDurationSeconds": 8,
+    "lunchReminder": {
+      "enabled": true,
+      "start": "11:50",
+      "end": "12:30"
+    }
+  }
 }
 ```
 
-删除这个文件后，窗口会回到默认尺寸。
+删除这个文件后，窗口、模型选择、朝向和提醒设置会回到默认值。
 
 ## 资源
 
@@ -279,14 +304,23 @@ node scripts/fix-glb-materials.mjs public/assets/pet.glb public/assets/pet.glb
 ```text
 src/main/
   index.ts              Electron 主进程、窗口、托盘和 HTTP API
+  bubbleWindowBounds.ts 独立气泡窗口跟随桌宠的定位计算
   trayMenu.ts           托盘完整控制菜单模板
+  trayIcon.ts           开发与打包环境的托盘图标路径解析
   petActionMenu.ts      宠物本体快速互动菜单模板
   petCommandServer.ts   本地 HTTP 命令服务
+  rendererStatus.ts     托盘菜单里的渲染器状态文案归一化
   windowMode.ts         普通模式 / 调试模式窗口配置
   windowSettings.ts     窗口 bounds 读写与归一化
 
 src/preload/
   index.ts              最小 preload bridge
+
+src/shared/
+  petActionMode.ts       语义化状态和一次性动作定义
+  petCommand.ts          HTTP / IPC 外部命令校验
+  petModel.ts            内置 Live2D 模型标识
+  petReminderSettings.ts 提醒气泡配置与默认值
 
 src/renderer/
   index.html            Renderer HTML 入口
@@ -300,6 +334,7 @@ src/renderer/
     live2dViewport.ts         Live2D 画布尺寸
   src/pet/
     PetController.ts          Three.js 备用程序化状态机
+    reminders.ts              休息 / 起身 / 午饭提醒调度
     dragHandles.ts            透明窗口拖动区
     assetUrl.ts               renderer 静态资源路径
     modelCapabilities.ts      GLB 能力检测
@@ -310,12 +345,14 @@ src/renderer/
 
 - Tororo 的新增互动基于已有 motion 和程序组合，不是新制作的 Live2D 动作文件。
 - 看着鼠标使用 Live2D focus 参数，不是 motion 文件。
+- 提醒气泡目前使用本地计时和本地配置，不接入系统日历、勿扰模式或账号同步。
 - Three.js 版本只做备用展示，互动效果会降级为整体模型变换。
+- 当前 Windows 打包默认跳过可执行文件资源编辑和签名；正式发布前需要补齐发布级签名流程。
 - Windows 是主要验收平台；macOS/Linux 后续需要单独适配透明窗口和置顶行为。
 
 ## 后续方向
 
-- 接入更多 Live2D 模型，并做模型切换。
+- 接入更多 Live2D 模型，并完善模型管理与资源校验。
 - 使用 Live2D Cubism Editor 制作新的 `.motion3.json` 自定义动作。
-- 增加语音、对话、系统事件触发和更丰富的外部 API。
-- 补充正式应用图标，并完善安装包签名与发布流程。
+- 增加语音、对话、系统事件触发、可视化提醒设置和更丰富的外部 API。
+- 完善安装包签名、Windows 可执行文件元信息和发布流程。
