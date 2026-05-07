@@ -27,4 +27,14 @@ describe('renderer bubble styles', () => {
     expect(bubbleViewRule?.groups?.body).toContain('bottom: 8px;');
     expect(bubbleViewRule?.groups?.body).not.toContain('top: 10px;');
   });
+
+  test('anchors the independent bubble tail on the right side for right-edge pets', () => {
+    const styles = readFileSync(stylesPath, 'utf8');
+    const bubbleTailRule = styles.match(/\.pet-bubble::after\s*\{(?<body>[^}]*)\}/);
+    const bubbleViewTailRule = styles.match(/\.bubble-view\s+\.pet-bubble::after\s*\{(?<body>[^}]*)\}/);
+
+    expect(bubbleTailRule?.groups?.body).toContain('left: 34px;');
+    expect(bubbleViewTailRule?.groups?.body).toContain('left: auto;');
+    expect(bubbleViewTailRule?.groups?.body).toContain('right: 34px;');
+  });
 });

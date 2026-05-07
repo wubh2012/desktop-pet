@@ -143,6 +143,11 @@ body {
   max-width: calc(100% - 24px);
 }
 
+.bubble-view .pet-bubble::after {
+  left: auto;
+  right: 34px;
+}
+
 .status {
   position: fixed;
   left: 10px;
